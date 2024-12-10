@@ -52,9 +52,7 @@ interface VideoData {
   insights: VideoInsights[];
 }
 
-interface AnalyticsResponse {
-  rows?: Array<Array<string | number>>;
-}
+type QueryResponse = youtubeAnalytics_v2.Schema$QueryResponse;
 
 export async function getChannelAnalytics(accessToken: string) {
   try {
@@ -76,27 +74,30 @@ export async function getChannelAnalytics(accessToken: string) {
     const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
 
     // Get analytics data
-    const analyticsResponse = await youtubeAnalytics.reports.query({
-      auth: oauth2Client,
-      dimensions: ['video'],
-      metrics: ['estimatedMinutesWatched', 'views', 'likes', 'comments'],
-      ids: `channel==${channelId}`,
-      startDate: '2020-01-01',
-      endDate: new Date().toISOString().split('T')[0],
-      sort: '-estimatedMinutesWatched'
+    const analyticsResponse = await new Promise<QueryResponse>((resolve, reject) => {
+      youtubeAnalytics.reports.query({
+        auth: oauth2Client,
+        dimensions: ['video'],
+        metrics: ['estimatedMinutesWatched', 'views', 'likes', 'comments'],
+        ids: `channel==${channelId}`,
+        startDate: '2020-01-01',
+        endDate: new Date().toISOString().split('T')[0],
+        sort: '-estimatedMinutesWatched'
+      }, (err, response) => {
+        if (err) reject(err);
+        else resolve(response?.data || { rows: [] });
+      });
     });
-
-    const analyticsData = analyticsResponse.data as AnalyticsResponse;
 
     return {
       overview: {
         totalViews: stats?.viewCount || '0',
         subscribers: stats?.subscriberCount || '0',
         totalVideos: stats?.videoCount || '0',
-        watchTime: analyticsData.rows?.[0]?.[1]?.toString() || '0',
+        watchTime: (analyticsResponse.rows?.[0]?.[1] || 0).toString(),
         engagementRate: calculateEngagementRate(stats)
       },
-      analyticsData
+      analyticsData: analyticsResponse
     };
   } catch (error) {
     console.error('Error fetching channel analytics:', error);
@@ -134,22 +135,25 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
     });
 
     // Get analytics for these videos
-    const analyticsResponse = await youtubeAnalytics.reports.query({
-      auth: oauth2Client,
-      dimensions: ['video'],
-      metrics: ['estimatedMinutesWatched', 'averageViewDuration', 'views', 'likes', 'comments'],
-      ids: 'channel==MINE',
-      startDate: '2020-01-01',
-      endDate: new Date().toISOString().split('T')[0],
-      filters: `video==${videoIds.join(',')}`
+    const analyticsResponse = await new Promise<QueryResponse>((resolve, reject) => {
+      youtubeAnalytics.reports.query({
+        auth: oauth2Client,
+        dimensions: ['video'],
+        metrics: ['estimatedMinutesWatched', 'averageViewDuration', 'views', 'likes', 'comments'],
+        ids: 'channel==MINE',
+        startDate: '2020-01-01',
+        endDate: new Date().toISOString().split('T')[0],
+        filters: `video==${videoIds.join(',')}`
+      }, (err, response) => {
+        if (err) reject(err);
+        else resolve(response?.data || { rows: [] });
+      });
     });
-
-    const analyticsData = analyticsResponse.data as AnalyticsResponse;
 
     // Combine all data and generate AI insights
     return videosResponse.data.items?.map((video, index) => {
       const stats = statsResponse.data.items?.[index]?.statistics as VideoStats;
-      const analyticsRow = analyticsData.rows?.find(
+      const analyticsRow = analyticsResponse.rows?.find(
         row => row[0] === video.id?.videoId
       );
       
@@ -160,14 +164,14 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
         publishedAt: video.snippet?.publishedAt,
         stats,
         analytics: {
-          watchTime: analyticsRow?.[1]?.toString() || '0',
-          avgViewDuration: analyticsRow?.[2]?.toString() || '0',
+          watchTime: (analyticsRow?.[1] || 0).toString(),
+          avgViewDuration: (analyticsRow?.[2] || 0).toString(),
           engagementRate: calculateVideoEngagementRate(stats)
         },
         insights: generateVideoInsights({
           title: video.snippet?.title || '',
           stats,
-          analytics: analyticsRow?.map(String) || []
+          analytics: analyticsRow?.map(val => val.toString()) || []
         })
       };
     }) || [];
