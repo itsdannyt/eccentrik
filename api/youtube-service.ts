@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { youtube_v3, youtubeAnalytics_v2 } from 'googleapis';
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -15,6 +16,39 @@ const SCOPES = [
   'https://www.googleapis.com/auth/yt-analytics.readonly'
 ];
 
+interface ChannelStats {
+  viewCount?: string;
+  subscriberCount?: string;
+  videoCount?: string;
+}
+
+interface VideoStats {
+  viewCount?: string;
+  likeCount?: string;
+  commentCount?: string;
+}
+
+interface VideoInsights {
+  type: 'improvement' | 'success';
+  message: string;
+}
+
+interface VideoAnalytics {
+  watchTime: string;
+  avgViewDuration: string;
+  engagementRate: string;
+}
+
+interface VideoData {
+  id: string;
+  title: string;
+  thumbnail: string;
+  publishedAt: string;
+  stats: VideoStats;
+  analytics: VideoAnalytics;
+  insights: VideoInsights[];
+}
+
 export async function getChannelAnalytics(accessToken: string) {
   try {
     oauth2Client.setCredentials({ access_token: accessToken });
@@ -26,10 +60,13 @@ export async function getChannelAnalytics(accessToken: string) {
       mine: true
     });
 
-    const channelId = channelResponse.data.items?.[0].id;
+    const channelId = channelResponse.data.items?.[0]?.id;
+    if (!channelId) {
+      throw new Error('Channel ID not found');
+    }
     
     // Get basic channel statistics
-    const stats = channelResponse.data.items?.[0].statistics;
+    const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
 
     // Get analytics data
     const analyticsResponse = await youtubeAnalytics.reports.query({
@@ -47,7 +84,7 @@ export async function getChannelAnalytics(accessToken: string) {
         totalViews: stats?.viewCount || '0',
         subscribers: stats?.subscriberCount || '0',
         totalVideos: stats?.videoCount || '0',
-        watchTime: analyticsResponse.data.rows?.[0]?.[1] || '0',
+        watchTime: analyticsResponse.data.rows?.[0]?.[1]?.toString() || '0',
         engagementRate: calculateEngagementRate(stats)
       },
       analyticsData: analyticsResponse.data
@@ -72,7 +109,13 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
       type: ['video']
     });
 
-    const videoIds = videosResponse.data.items?.map(item => item.id?.videoId) || [];
+    const videoIds = videosResponse.data.items
+      ?.map(item => item.id?.videoId)
+      .filter((id): id is string => !!id) || [];
+
+    if (videoIds.length === 0) {
+      return [];
+    }
 
     // Get detailed video statistics
     const statsResponse = await youtube.videos.list({
@@ -94,7 +137,7 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
 
     // Combine all data and generate AI insights
     const videos = videosResponse.data.items?.map((video, index) => {
-      const stats = statsResponse.data.items?.[index].statistics;
+      const stats = statsResponse.data.items?.[index]?.statistics as VideoStats;
       const analytics = analyticsResponse.data.rows?.find(row => row[0] === video.id?.videoId);
       
       return {
@@ -102,14 +145,10 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
         title: video.snippet?.title,
         thumbnail: video.snippet?.thumbnails?.high?.url,
         publishedAt: video.snippet?.publishedAt,
-        stats: {
-          views: stats?.viewCount || '0',
-          likes: stats?.likeCount || '0',
-          comments: stats?.commentCount || '0'
-        },
+        stats,
         analytics: {
-          watchTime: analytics?.[1] || '0',
-          avgViewDuration: analytics?.[2] || '0',
+          watchTime: analytics?.[1]?.toString() || '0',
+          avgViewDuration: analytics?.[2]?.toString() || '0',
           engagementRate: calculateVideoEngagementRate(stats)
         },
         insights: generateVideoInsights({
@@ -127,51 +166,52 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
   }
 }
 
-function calculateEngagementRate(stats: any) {
+function calculateEngagementRate(stats: ChannelStats) {
   if (!stats?.viewCount) return '0';
   const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
   const views = parseInt(stats.viewCount);
   return ((interactions / views) * 100).toFixed(2);
 }
 
-function calculateVideoEngagementRate(stats: any) {
+function calculateVideoEngagementRate(stats: VideoStats) {
   if (!stats?.viewCount) return '0';
   const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
   const views = parseInt(stats.viewCount);
   return ((interactions / views) * 100).toFixed(2);
 }
 
-function generateVideoInsights(data: any) {
-  const insights = [];
+function generateVideoInsights(data: { title: string; stats: VideoStats; analytics: any[] }): VideoInsights[] {
+  const insights: VideoInsights[] = [];
   
   // View performance
   const viewCount = parseInt(data.stats?.viewCount || '0');
-  if (viewCount < 1000) {
+  
+  if (viewCount < 100) {
     insights.push({
       type: 'improvement',
-      message: 'Consider optimizing your title and thumbnails to improve visibility'
+      message: 'This video has low views. Consider improving your thumbnail and title for better visibility.'
+    });
+  } else if (viewCount > 1000) {
+    insights.push({
+      type: 'success',
+      message: 'Great job! This video is performing well in terms of views.'
     });
   }
 
   // Engagement analysis
-  const engagementRate = parseFloat(calculateVideoEngagementRate(data.stats));
+  const likeCount = parseInt(data.stats?.likeCount || '0');
+  const commentCount = parseInt(data.stats?.commentCount || '0');
+  const engagementRate = ((likeCount + commentCount) / viewCount) * 100;
+
   if (engagementRate < 5) {
     insights.push({
       type: 'improvement',
-      message: 'Try adding calls-to-action in your videos to boost engagement'
+      message: 'The engagement rate is low. Try asking questions in your video to encourage comments.'
     });
   } else if (engagementRate > 10) {
     insights.push({
       type: 'success',
-      message: 'Great engagement! Your content is resonating with viewers'
-    });
-  }
-
-  // Title analysis
-  if (data.title.length < 30) {
-    insights.push({
-      type: 'improvement',
-      message: 'Consider using longer, more descriptive titles (40-60 characters)'
+      message: 'Excellent engagement rate! Your content is resonating with viewers.'
     });
   }
 
