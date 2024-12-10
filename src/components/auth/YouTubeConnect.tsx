@@ -7,13 +7,19 @@ export function YouTubeConnect() {
   const { user, youtubeToken, setYoutubeToken } = useAuth();
 
   const handleConnectYouTube = async () => {
+    // Generate a random state value
+    const state = Math.random().toString(36).substring(7);
+    // Store state in sessionStorage for verification
+    sessionStorage.setItem('youtube_oauth_state', state);
+
     // Generate OAuth URL
     const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
       `client_id=${import.meta.env.VITE_GOOGLE_CLIENT_ID}&` +
       `redirect_uri=${import.meta.env.VITE_YOUTUBE_REDIRECT_URI}&` +
-      `response_type=token&` +
+      `response_type=code&` +
       `scope=https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly&` +
       `access_type=offline&` +
+      `state=${state}&` +
       `prompt=consent`;
 
     // Open OAuth window
@@ -22,17 +28,37 @@ export function YouTubeConnect() {
 
   // Handle OAuth callback
   React.useEffect(() => {
-    const hash = window.location.hash;
-    if (hash && hash.includes('access_token')) {
-      const token = new URLSearchParams(hash.substring(1)).get('access_token');
-      if (token && user) {
-        // Store token in user metadata
-        supabase.auth.updateUser({
-          data: { youtube_token: token }
-        }).then(() => {
-          setYoutubeToken(token);
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    const storedState = sessionStorage.getItem('youtube_oauth_state');
+
+    if (code && state && storedState === state) {
+      // Clear state from storage
+      sessionStorage.removeItem('youtube_oauth_state');
+
+      // Exchange code for token
+      fetch('/api/youtube/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.access_token && user) {
+            // Store token in user metadata
+            supabase.auth.updateUser({
+              data: { youtube_token: data.access_token }
+            }).then(() => {
+              setYoutubeToken(data.access_token);
+            });
+          }
+        })
+        .catch(error => {
+          console.error('Error exchanging code for token:', error);
         });
-      }
     }
   }, [user]);
 
