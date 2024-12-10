@@ -2,7 +2,6 @@ import axios from 'axios';
 import { VideoStats, HistoricalData } from './types';
 import { CacheService } from '../../services/CacheService';
 import { RateLimitService } from '../../services/RateLimitService';
-import { google } from 'googleapis';
 
 const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
 const BASE_URL = 'https://youtube.googleapis.com/youtube/v3';
@@ -12,7 +11,6 @@ export class YouTubeClient {
   private cacheService: CacheService;
   private rateLimitService: RateLimitService;
   private accessToken: string | null = null;
-  private youtubeAnalytics: any;
 
   private constructor() {
     this.cacheService = CacheService.getInstance();
@@ -28,116 +26,32 @@ export class YouTubeClient {
 
   public setAccessToken(token: string) {
     this.accessToken = token;
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: token });
-    this.youtubeAnalytics = google.youtubeAnalytics({ version: 'v2', auth });
-  }
-
-  private async executeRequest(endpoint: string, params: Record<string, any>) {
-    try {
-      if (!this.accessToken) {
-        throw new Error('Access token not set. Please authenticate first.');
-      }
-
-      // Build the YouTube API URL with parameters
-      const youtubeUrl = new URL(`${BASE_URL}/${endpoint}`);
-      youtubeUrl.searchParams.append('key', YOUTUBE_API_KEY);
-      for (const [key, value] of Object.entries(params)) {
-        youtubeUrl.searchParams.append(key, String(value));
-      }
-
-      // Add authorization header
-      const headers = {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Accept': 'application/json'
-      };
-
-      // Log the request URL (without API key)
-      const debugUrl = new URL(youtubeUrl.toString());
-      debugUrl.searchParams.delete('key');
-      console.log('Making request to:', debugUrl.toString());
-
-      // Make direct request with authorization header
-      const response = await axios.get(youtubeUrl.toString(), { headers });
-      
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
-      
-      if (!response.data) {
-        console.error('Empty response from YouTube API');
-        throw new Error('Empty response from YouTube API');
-      }
-
-      return response.data;
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        console.error('YouTube API Request Failed:', {
-          message: error.message,
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          data: error.response?.data
-        });
-        throw new Error(`YouTube API Error: ${error.message}`);
-      }
-      console.error('Unexpected error in executeRequest:', error);
-      throw error;
-    }
   }
 
   public async getChannelAnalytics() {
-    try {
-      // Get channel ID first
-      const channelResponse = await this.executeRequest('channels', {
-        part: 'id,statistics',
-        mine: true
-      });
-
-      const channelId = channelResponse.items?.[0]?.id;
-      if (!channelId) {
-        throw new Error('Channel ID not found');
-      }
-      
-      // Get basic channel statistics
-      const stats = channelResponse.items[0].statistics;
-
-      // Get analytics data using the YouTube Analytics API client
-      const analyticsResponse = await this.youtubeAnalytics.reports.query({
-        dimensions: 'video',
-        metrics: 'estimatedMinutesWatched,views,likes,comments',
-        ids: `channel==${channelId}`,
-        startDate: '2020-01-01',
-        endDate: new Date().toISOString().split('T')[0],
-        sort: '-estimatedMinutesWatched'
-      });
-
-      return {
-        overview: {
-          totalViews: stats.viewCount || '0',
-          subscribers: stats.subscriberCount || '0',
-          totalVideos: stats.videoCount || '0',
-          watchTime: (analyticsResponse.data.rows?.[0]?.[1] || 0).toString(),
-          engagementRate: this.calculateEngagementRate(stats)
-        },
-        analyticsData: analyticsResponse.data
-      };
-    } catch (error) {
-      console.error('Error fetching channel analytics:', error);
-      throw error;
+    if (!this.accessToken) {
+      throw new Error('Access token not set. Please authenticate first.');
     }
+
+    const response = await axios.get('/api/youtube/analytics', {
+      params: {
+        accessToken: this.accessToken
+      }
+    });
+
+    return response.data;
   }
 
   public async getRecentVideos() {
     try {
       // Get recent videos
-      const videosResponse = await this.executeRequest('search', {
-        part: 'id,snippet',
-        forMine: true,
-        maxResults: 3,
-        order: 'date',
-        type: 'video'
+      const videosResponse = await axios.get('/api/youtube/videos', {
+        params: {
+          accessToken: this.accessToken
+        }
       });
 
-      const videoIds = videosResponse.items
+      const videoIds = videosResponse.data.items
         ?.map(item => item.id?.videoId)
         .filter((id): id is string => !!id) || [];
 
@@ -146,24 +60,24 @@ export class YouTubeClient {
       }
 
       // Get detailed video statistics
-      const statsResponse = await this.executeRequest('videos', {
-        part: 'statistics,contentDetails',
-        id: videoIds.join(',')
+      const statsResponse = await axios.get('/api/youtube/videos', {
+        params: {
+          accessToken: this.accessToken,
+          id: videoIds.join(',')
+        }
       });
 
       // Get analytics for these videos using the YouTube Analytics API client
-      const analyticsResponse = await this.youtubeAnalytics.reports.query({
-        dimensions: 'video',
-        metrics: 'estimatedMinutesWatched,averageViewDuration,views,likes,comments',
-        ids: 'channel==MINE',
-        startDate: '2020-01-01',
-        endDate: new Date().toISOString().split('T')[0],
-        filters: `video==${videoIds.join(',')}`
+      const analyticsResponse = await axios.get('/api/youtube/analytics', {
+        params: {
+          accessToken: this.accessToken,
+          videoIds: videoIds.join(',')
+        }
       });
 
       // Combine all data
-      return videosResponse.items?.map((video, index) => {
-        const stats = statsResponse.items?.[index]?.statistics;
+      return videosResponse.data.items?.map((video, index) => {
+        const stats = statsResponse.data.items?.[index]?.statistics;
         const analyticsRow = analyticsResponse.data.rows?.find(
           row => row[0] === video.id?.videoId
         );
@@ -202,23 +116,6 @@ export class YouTubeClient {
     return Math.round((views / impressions) * 100);
   }
 
-  private async get30DayAnalytics(channelId: string, userId: string) {
-    const endDate = new Date().toISOString().split('T')[0];
-    const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-    const analyticsResponse = await this.rateLimitService.executeWithRetry(userId, async () => {
-      return this.youtubeAnalytics.reports.query({
-        ids: `channel==${channelId}`,
-        startDate,
-        endDate,
-        metrics: 'views,estimatedMinutesWatched,averageViewDuration,subscribersGained,subscribersLost,likes,comments',
-        dimensions: 'day'
-      });
-    });
-
-    return analyticsResponse.data;
-  }
-
   async getHistoricalData(channelId: string, userId: string): Promise<HistoricalData> {
     try {
       const cacheKey = `historical_data_${channelId}`;
@@ -226,16 +123,18 @@ export class YouTubeClient {
       if (cached) return cached;
 
       // Get channel data
-      const channelData = await this.executeRequest('channels', {
-        part: 'statistics,snippet,contentDetails',
-        id: channelId
+      const channelData = await axios.get('/api/youtube/channels', {
+        params: {
+          accessToken: this.accessToken,
+          id: channelId
+        }
       });
 
-      if (!channelData.items || channelData.items.length === 0) {
+      if (!channelData.data.items || channelData.data.items.length === 0) {
         throw new Error('Channel not found');
       }
 
-      const channel = channelData.items[0];
+      const channel = channelData.data.items[0];
       const statistics = channel.statistics;
       const channelTitle = channel.snippet.title;
       const uploadsPlaylistId = channel.contentDetails.relatedPlaylists.uploads;
@@ -292,13 +191,12 @@ export class YouTubeClient {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const response = await this.rateLimitService.executeWithRetry(userId, async () => {
-      return this.executeRequest('channels', {
+    const response = await axios.get('/api/youtube/channels', {
+      params: {
+        accessToken: this.accessToken,
         id: channelId,
-        part: 'statistics',
-        fields: 'items(statistics)',
         publishedBefore: thirtyDaysAgo.toISOString()
-      });
+      }
     });
 
     const previousStats = response.data?.items?.[0]?.statistics || {
@@ -327,13 +225,12 @@ export class YouTubeClient {
     const cached = this.cacheService.get<any>(cacheKey);
     if (cached) return cached;
 
-    const response = await this.rateLimitService.executeWithRetry(userId, async () => {
-      return this.executeRequest('videos', {
+    const response = await axios.get('/api/youtube/videos', {
+      params: {
+        accessToken: this.accessToken,
         id: videoId,
-        part: 'statistics',
-        fields: 'items(statistics)',
-        ...(publishedBefore && { publishedBefore })
-      });
+        publishedBefore
+      }
     });
 
     const stats = response.data?.items?.[0]?.statistics || {
@@ -352,13 +249,13 @@ export class YouTubeClient {
     let pageToken: string | undefined;
 
     do {
-      const response = await this.rateLimitService.executeWithRetry(userId, async () => {
-        return this.executeRequest('playlistItems', {
+      const response = await axios.get('/api/youtube/playlistItems', {
+        params: {
+          accessToken: this.accessToken,
           playlistId,
-          part: 'snippet',
           maxResults: batchSize,
           pageToken
-        });
+        }
       });
 
       allItems = allItems.concat(response.data.items);
@@ -379,23 +276,16 @@ export class YouTubeClient {
 
     const results = await Promise.all(
       batches.map(batch => 
-        this.rateLimitService.executeWithRetry(userId, async () => {
-          const response = await this.executeRequest('videos', {
-            id: batch.join(','),
-            part: 'statistics',
-            fields: 'items(statistics)'
-          });
-          return response.data.items;
+        axios.get('/api/youtube/videos', {
+          params: {
+            accessToken: this.accessToken,
+            id: batch.join(',')
+          }
         })
       )
     );
 
-    return results.flat().map(item => ({
-      viewCount: item.statistics.viewCount || '0',
-      likeCount: item.statistics.likeCount || '0',
-      commentCount: item.statistics.commentCount || '0',
-      ctr: this.calculateCTR(item.statistics)
-    }));
+    return results.flatMap(response => response.data.items);
   }
 
   private calculateVideoEngagementRate(stats: any): string {
