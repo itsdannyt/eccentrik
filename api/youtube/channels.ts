@@ -25,7 +25,7 @@ const handler = async (req: VercelRequest, res: VercelResponse) => {
       publishedBefore: typeof publishedBefore === 'string' ? publishedBefore : undefined
     });
 
-    return res.status(200).json(response.data || {});
+    return res.status(200).json(response?.data || {});
   } catch (error: any) {
     console.error('YouTube Channels API Error:', error);
     return res.status(500).json({ 

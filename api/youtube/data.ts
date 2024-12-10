@@ -3,14 +3,14 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 type YouTubeParams = {
   part?: string;
   id?: string;
-  maxResults?: number;
-  mine?: boolean;
+  maxResults?: string;
+  mine?: string;
   forUsername?: string;
   q?: string;
   type?: string;
   videoCategoryId?: string;
   order?: string;
-  forMine?: boolean;
+  forMine?: string;
   accessToken?: string;
 };
 
@@ -40,42 +40,40 @@ const handler = async (req: VercelRequest, res: VercelResponse) => {
       auth = YOUTUBE_API_KEY;
     }
 
-    const parts = params.part?.split(',') || ['snippet'];
-
     switch (endpoint) {
       case 'videos': {
-        const videoResponse = await youtube.videos.list({
+        const response = await youtube.videos.list({
           auth,
-          part: parts,
+          part: ['snippet', 'statistics', 'contentDetails'],
           id: params.id,
-          maxResults: params.maxResults ? Number(params.maxResults) : undefined
+          maxResults: params.maxResults ? parseInt(params.maxResults) : undefined
         });
-        return res.status(200).json(videoResponse.data || {});
+        return res.status(200).json(response?.data || {});
       }
 
       case 'channels': {
-        const channelResponse = await youtube.channels.list({
+        const response = await youtube.channels.list({
           auth,
-          part: parts,
+          part: ['snippet', 'statistics', 'contentDetails'],
           id: params.id,
           mine: params.mine === 'true',
           forUsername: params.forUsername
         });
-        return res.status(200).json(channelResponse.data || {});
+        return res.status(200).json(response?.data || {});
       }
 
       case 'search': {
-        const searchResponse = await youtube.search.list({
+        const response = await youtube.search.list({
           auth,
-          part: parts,
+          part: ['snippet'],
           q: params.q,
-          type: params.type?.split(','),
+          type: params.type ? [params.type] : undefined,
           videoCategoryId: params.videoCategoryId,
           order: params.order,
-          maxResults: params.maxResults ? Number(params.maxResults) : undefined,
+          maxResults: params.maxResults ? parseInt(params.maxResults) : undefined,
           forMine: params.forMine === 'true'
         });
-        return res.status(200).json(searchResponse.data || {});
+        return res.status(200).json(response?.data || {});
       }
 
       default:

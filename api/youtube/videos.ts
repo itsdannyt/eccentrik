@@ -21,21 +21,21 @@ const handler = async (req: VercelRequest, res: VercelResponse) => {
 
     if (id) {
       // Get specific video(s) by ID
-      const videoResponse = await youtube.videos.list({
+      const response = await youtube.videos.list({
         part: ['snippet', 'statistics', 'contentDetails'],
         id: Array.isArray(id) ? id.join(',') : id
       });
-      return res.status(200).json(videoResponse.data || {});
+      return res.status(200).json(response?.data || {});
     } else {
       // Get recent videos
-      const searchResponse = await youtube.search.list({
+      const response = await youtube.search.list({
         part: ['id', 'snippet'],
         forMine: true,
         maxResults: 3,
         order: 'date',
         type: ['video']
       });
-      return res.status(200).json(searchResponse.data || {});
+      return res.status(200).json(response?.data || {});
     }
   } catch (error: any) {
     console.error('YouTube Videos API Error:', error);
