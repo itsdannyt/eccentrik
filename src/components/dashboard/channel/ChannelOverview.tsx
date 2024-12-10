@@ -5,12 +5,10 @@ import { useYouTubeData } from '../../../lib/hooks/useYouTubeData';
 interface MetricCardProps {
   title: string;
   value: string;
-  change: string;
   icon: React.ReactNode;
-  isPositive?: boolean;
 }
 
-function MetricCard({ title, value, change, icon, isPositive = true }: MetricCardProps) {
+function MetricCard({ title, value, icon }: MetricCardProps) {
   return (
     <div className="bg-gray-950/80 backdrop-blur-sm rounded-xl p-4 h-[140px] flex flex-col justify-between border border-white/10">
       <div className="flex items-start justify-between">
@@ -22,72 +20,56 @@ function MetricCard({ title, value, change, icon, isPositive = true }: MetricCar
           {icon}
         </div>
       </div>
-      <div className="flex items-center justify-between">
-        <span className={`text-xs sm:text-sm font-medium ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-          {change}
-        </span>
-        <span className="text-xs sm:text-sm text-gray-400">Last 30 days</span>
-      </div>
     </div>
   );
 }
 
 export function ChannelOverview() {
-  const { formattedStats, growth } = useYouTubeData();
+  const { stats, loading, error } = useYouTubeData();
+
+  if (loading) {
+    return <div>Loading channel analytics...</div>;
+  }
+
+  if (error) {
+    return <div>Error loading channel analytics: {error}</div>;
+  }
 
   const metrics = [
-    // Top row
     {
       title: 'Total Views',
-      value: formattedStats.views,
-      change: growth.views,
-      icon: <BarChart2 className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />,
-      isPositive: !growth.views?.startsWith('-')
+      value: stats.views,
+      icon: <BarChart2 className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
     },
     {
-      title: 'Subscriber Growth',
-      value: formattedStats.subscribers,
-      change: growth.subscribers,
-      icon: <Users className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />,
-      isPositive: !growth.subscribers?.startsWith('-')
+      title: 'Subscribers',
+      value: stats.subscribers,
+      icon: <Users className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
     },
-    // Bottom row
     {
       title: 'Watch Time',
-      value: formattedStats.watchTime,
-      change: growth.watchTime,
-      icon: <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />,
-      isPositive: !growth.watchTime?.startsWith('-')
+      value: stats.watchTime,
+      icon: <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
     },
     {
       title: 'Engagement Rate',
-      value: formattedStats.engagementRate || '0%',
-      change: growth.engagementRate || '+0%',
-      icon: <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />,
-      isPositive: !growth.engagementRate?.startsWith('-')
+      value: stats.engagement,
+      icon: <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
     }
   ];
 
   return (
-    <div>
-      <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Channel Overview</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-        {/* Total Views */}
-        <div className="col-span-1">
-          <MetricCard {...metrics[0]} />
-        </div>
-        {/* Subscriber Growth */}
-        <div className="col-span-1">
-          <MetricCard {...metrics[1]} />
-        </div>
-        {/* Watch Time */}
-        <div className="col-span-1">
-          <MetricCard {...metrics[2]} />
-        </div>
-        {/* Engagement Rate */}
-        <div className="col-span-1">
-          <MetricCard {...metrics[3]} />
-        </div>
+    <div className="w-full">
+      <h2 className="text-xl font-bold mb-4">Channel Overview</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {metrics.map((metric, index) => (
+          <MetricCard
+            key={index}
+            title={metric.title}
+            value={metric.value}
+            icon={metric.icon}
+          />
+        ))}
       </div>
     </div>
   );

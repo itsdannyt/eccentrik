@@ -1,32 +1,39 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import axios from 'axios';
-
-const YOUTUBE_API_KEY = process.env.VITE_YOUTUBE_API_KEY;
-const BASE_URL = 'https://youtube.googleapis.com/youtube/v3';
+import { getChannelAnalytics, getRecentVideosWithAnalytics } from './youtube-service';
 
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse
 ) {
   try {
-    const { endpoint, ...params } = request.query;
+    const { endpoint } = request.query;
+    const accessToken = request.headers.authorization?.replace('Bearer ', '');
+
+    if (!accessToken) {
+      return response.status(401).json({ error: 'No access token provided' });
+    }
 
     if (!endpoint || typeof endpoint !== 'string') {
       return response.status(400).json({ error: 'Endpoint is required' });
     }
 
-    const youtubeResponse = await axios.get(`${BASE_URL}/${endpoint}`, {
-      params: {
-        ...params,
-        key: YOUTUBE_API_KEY
-      }
-    });
-
-    return response.status(200).json(youtubeResponse.data);
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      return response.status(error.response?.status || 500).json(error.response?.data || { error: 'YouTube API error' });
+    let data;
+    switch (endpoint) {
+      case 'channel-analytics':
+        data = await getChannelAnalytics(accessToken);
+        break;
+      case 'recent-videos':
+        data = await getRecentVideosWithAnalytics(accessToken);
+        break;
+      default:
+        return response.status(400).json({ error: 'Invalid endpoint' });
     }
-    return response.status(500).json({ error: 'Internal server error' });
+
+    return response.status(200).json(data);
+  } catch (error: any) {
+    console.error('YouTube API error:', error);
+    return response.status(error.status || 500).json({ 
+      error: error.message || 'Internal server error' 
+    });
   }
 }
