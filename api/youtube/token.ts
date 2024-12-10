@@ -55,18 +55,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         refresh_token: tokens.refresh_token,
         expiry_date: tokens.expiry_date
       });
-    } catch (tokenError) {
+    } catch (tokenError: unknown) {
       console.error('Token exchange error:', tokenError);
       return res.status(400).json({
         error: 'Failed to exchange authorization code',
-        details: tokenError.message
+        details: tokenError instanceof Error ? tokenError.message : 'Unknown error'
       });
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Server error:', error);
     return res.status(500).json({
       error: 'Internal server error',
-      message: error.message
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 }
