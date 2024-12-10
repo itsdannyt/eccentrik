@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { youtube_v3 } from 'googleapis';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
@@ -18,24 +19,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
+    let response: youtube_v3.Schema$VideoListResponse | youtube_v3.Schema$SearchListResponse;
+
     if (id) {
       // Get specific video(s) by ID
-      const response = await youtube.videos.list({
+      const videoResponse = await youtube.videos.list({
         part: ['snippet', 'statistics', 'contentDetails'],
         id: Array.isArray(id) ? id.join(',') : id
       });
-      return res.status(200).json(response.data || {});
+      response = videoResponse.data;
     } else {
       // Get recent videos
-      const response = await youtube.search.list({
+      const searchResponse = await youtube.search.list({
         part: ['id', 'snippet'],
         forMine: true,
         maxResults: 3,
         order: 'date',
         type: ['video']
       });
-      return res.status(200).json(response.data || {});
+      response = searchResponse.data;
     }
+
+    return res.status(200).json(response || {});
   } catch (error: any) {
     console.error('YouTube Videos API Error:', error);
     return res.status(500).json({ 

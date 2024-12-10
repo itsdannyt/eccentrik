@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { youtube_v3, youtubeAnalytics_v2 } from 'googleapis';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
@@ -31,13 +32,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Get analytics data
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = '2020-01-01';
+
     const analyticsResponse = await youtubeAnalytics.reports.query({
       ids: 'channel==MINE',
       metrics: 'estimatedMinutesWatched,views,likes,subscribersGained',
-      dimensions: ['video'],
+      startDate,
+      endDate,
+      dimensions: 'video',
       sort: '-estimatedMinutesWatched',
-      startDate: '2020-01-01',
-      endDate: new Date().toISOString().split('T')[0],
       maxResults: 10
     });
 

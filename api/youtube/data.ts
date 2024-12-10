@@ -1,15 +1,31 @@
 import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { youtube_v3 } from 'googleapis';
 
 const youtube = google.youtube('v3');
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+
+type YouTubeParams = {
+  part?: string;
+  id?: string;
+  maxResults?: number;
+  mine?: boolean;
+  forUsername?: string;
+  q?: string;
+  type?: string;
+  videoCategoryId?: string;
+  order?: string;
+  forMine?: boolean;
+  accessToken?: string;
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { endpoint, ...params } = req.query;
+  const { endpoint, ...queryParams } = req.query;
+  const params = queryParams as YouTubeParams;
 
   if (!endpoint || typeof endpoint !== 'string') {
     return res.status(400).json({ error: 'Endpoint is required' });
@@ -25,45 +41,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       auth = YOUTUBE_API_KEY;
     }
 
-    let response;
+    let response: youtube_v3.Schema$VideoListResponse | youtube_v3.Schema$ChannelListResponse | youtube_v3.Schema$SearchListResponse;
+
+    const commonParams = {
+      auth,
+      part: params.part?.split(',') as string[]
+    };
+
     switch (endpoint) {
       case 'videos':
-        response = await youtube.videos.list({
-          auth,
-          part: typeof params.part === 'string' ? params.part.split(',') : ['snippet'],
-          id: params.id as string,
-          maxResults: params.maxResults ? Number(params.maxResults) : undefined
+        const videoResponse = await youtube.videos.list({
+          ...commonParams,
+          id: params.id,
+          maxResults: params.maxResults
         });
+        response = videoResponse.data;
         break;
 
       case 'channels':
-        response = await youtube.channels.list({
-          auth,
-          part: typeof params.part === 'string' ? params.part.split(',') : ['snippet'],
-          id: params.id as string,
-          mine: params.mine === 'true',
-          forUsername: params.forUsername as string
+        const channelResponse = await youtube.channels.list({
+          ...commonParams,
+          id: params.id,
+          mine: params.mine,
+          forUsername: params.forUsername
         });
+        response = channelResponse.data;
         break;
 
       case 'search':
-        response = await youtube.search.list({
-          auth,
-          part: typeof params.part === 'string' ? params.part.split(',') : ['snippet'],
-          q: params.q as string,
-          type: params.type ? (params.type as string).split(',') : undefined,
-          videoCategoryId: params.videoCategoryId as string,
+        const searchResponse = await youtube.search.list({
+          ...commonParams,
+          q: params.q,
+          type: params.type?.split(',') as string[],
+          videoCategoryId: params.videoCategoryId,
           order: params.order as string,
-          maxResults: params.maxResults ? Number(params.maxResults) : undefined,
-          forMine: params.forMine === 'true'
+          maxResults: params.maxResults,
+          forMine: params.forMine
         });
+        response = searchResponse.data;
         break;
 
       default:
         return res.status(400).json({ error: 'Invalid endpoint' });
     }
 
-    return res.status(200).json(response?.data || {});
+    return res.status(200).json(response || {});
   } catch (error: any) {
     console.error('YouTube API Error:', error);
     return res.status(500).json({ 
