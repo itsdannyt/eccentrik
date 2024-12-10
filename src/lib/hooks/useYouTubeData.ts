@@ -40,7 +40,7 @@ interface FormattedStats {
 }
 
 export function useYouTubeData() {
-  const { user, accessToken } = useAuth();
+  const { user, youtubeToken } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<YouTubeStats>({
@@ -54,14 +54,17 @@ export function useYouTubeData() {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!accessToken) return;
+      if (!youtubeToken) {
+        setError('YouTube access token not found. Please connect your YouTube account.');
+        return;
+      }
 
       setLoading(true);
       setError(null);
 
       try {
         const client = YouTubeClient.getInstance();
-        client.setAccessToken(accessToken);
+        client.setAccessToken(youtubeToken);
 
         // Fetch channel analytics
         const analytics = await client.getChannelAnalytics();
@@ -79,7 +82,7 @@ export function useYouTubeData() {
     };
 
     fetchData();
-  }, [accessToken]);
+  }, [youtubeToken]);
 
   const formattedStats: FormattedStats = {
     subscribers: formatNumber(stats.subscribers),
