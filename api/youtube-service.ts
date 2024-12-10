@@ -74,19 +74,14 @@ export async function getChannelAnalytics(accessToken: string) {
     const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
 
     // Get analytics data
-    const analyticsResponse = await new Promise<QueryResponse>((resolve, reject) => {
-      youtubeAnalytics.reports.query({
-        auth: oauth2Client,
-        dimensions: ['video'],
-        metrics: ['estimatedMinutesWatched', 'views', 'likes', 'comments'],
-        ids: `channel==${channelId}`,
-        startDate: '2020-01-01',
-        endDate: new Date().toISOString().split('T')[0],
-        sort: '-estimatedMinutesWatched'
-      }, (err, response) => {
-        if (err) reject(err);
-        else resolve(response?.data || { rows: [] });
-      });
+    const analyticsResponse = await youtubeAnalytics.reports.query.call(youtubeAnalytics.reports, {
+      auth: oauth2Client,
+      dimensions: 'video',
+      metrics: 'estimatedMinutesWatched,views,likes,comments',
+      ids: `channel==${channelId}`,
+      startDate: '2020-01-01',
+      endDate: new Date().toISOString().split('T')[0],
+      sort: '-estimatedMinutesWatched'
     });
 
     return {
@@ -94,10 +89,10 @@ export async function getChannelAnalytics(accessToken: string) {
         totalViews: stats?.viewCount || '0',
         subscribers: stats?.subscriberCount || '0',
         totalVideos: stats?.videoCount || '0',
-        watchTime: (analyticsResponse.rows?.[0]?.[1] || 0).toString(),
+        watchTime: (analyticsResponse.data.rows?.[0]?.[1] || 0).toString(),
         engagementRate: calculateEngagementRate(stats)
       },
-      analyticsData: analyticsResponse
+      analyticsData: analyticsResponse.data
     };
   } catch (error) {
     console.error('Error fetching channel analytics:', error);
@@ -135,25 +130,20 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
     });
 
     // Get analytics for these videos
-    const analyticsResponse = await new Promise<QueryResponse>((resolve, reject) => {
-      youtubeAnalytics.reports.query({
-        auth: oauth2Client,
-        dimensions: ['video'],
-        metrics: ['estimatedMinutesWatched', 'averageViewDuration', 'views', 'likes', 'comments'],
-        ids: 'channel==MINE',
-        startDate: '2020-01-01',
-        endDate: new Date().toISOString().split('T')[0],
-        filters: `video==${videoIds.join(',')}`
-      }, (err, response) => {
-        if (err) reject(err);
-        else resolve(response?.data || { rows: [] });
-      });
+    const analyticsResponse = await youtubeAnalytics.reports.query.call(youtubeAnalytics.reports, {
+      auth: oauth2Client,
+      dimensions: 'video',
+      metrics: 'estimatedMinutesWatched,averageViewDuration,views,likes,comments',
+      ids: 'channel==MINE',
+      startDate: '2020-01-01',
+      endDate: new Date().toISOString().split('T')[0],
+      filters: `video==${videoIds.join(',')}`
     });
 
     // Combine all data and generate AI insights
     return videosResponse.data.items?.map((video, index) => {
       const stats = statsResponse.data.items?.[index]?.statistics as VideoStats;
-      const analyticsRow = analyticsResponse.rows?.find(
+      const analyticsRow = analyticsResponse.data.rows?.find(
         row => row[0] === video.id?.videoId
       );
       
