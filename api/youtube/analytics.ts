@@ -2,7 +2,7 @@ import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { youtube_v3, youtubeAnalytics_v2 } from 'googleapis';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+const handler = async (req: VercelRequest, res: VercelResponse) => {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -61,4 +61,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       details: error.message 
     });
   }
-}
+};
+
+export default handler;

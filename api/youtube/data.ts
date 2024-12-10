@@ -19,7 +19,7 @@ type YouTubeParams = {
   accessToken?: string;
 };
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+const handler = async (req: VercelRequest, res: VercelResponse) => {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -89,4 +89,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       details: error.message 
     });
   }
-}
+};
+
+export { handler };
