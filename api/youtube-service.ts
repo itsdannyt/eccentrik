@@ -52,6 +52,10 @@ interface VideoData {
   insights: VideoInsights[];
 }
 
+interface AnalyticsResponse {
+  rows?: Array<Array<string | number>>;
+}
+
 export async function getChannelAnalytics(accessToken: string) {
   try {
     oauth2Client.setCredentials({ access_token: accessToken });
@@ -61,7 +65,7 @@ export async function getChannelAnalytics(accessToken: string) {
       auth: oauth2Client,
       part: ['id', 'statistics'],
       mine: true
-    }).then(response => response);
+    });
 
     const channelId = channelResponse.data.items?.[0]?.id;
     if (!channelId) {
@@ -80,17 +84,19 @@ export async function getChannelAnalytics(accessToken: string) {
       startDate: '2020-01-01',
       endDate: new Date().toISOString().split('T')[0],
       sort: '-estimatedMinutesWatched'
-    }).then(response => response);
+    });
+
+    const analyticsData = analyticsResponse.data as AnalyticsResponse;
 
     return {
       overview: {
         totalViews: stats?.viewCount || '0',
         subscribers: stats?.subscriberCount || '0',
         totalVideos: stats?.videoCount || '0',
-        watchTime: analyticsResponse.data.rows?.[0]?.[1]?.toString() || '0',
+        watchTime: analyticsData.rows?.[0]?.[1]?.toString() || '0',
         engagementRate: calculateEngagementRate(stats)
       },
-      analyticsData: analyticsResponse.data
+      analyticsData
     };
   } catch (error) {
     console.error('Error fetching channel analytics:', error);
@@ -110,7 +116,7 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
       maxResults: 3,
       order: 'date',
       type: ['video']
-    }).then(response => response);
+    });
 
     const videoIds = videosResponse.data.items
       ?.map(item => item.id?.videoId)
@@ -125,7 +131,7 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
       auth: oauth2Client,
       part: ['statistics', 'contentDetails'],
       id: videoIds
-    }).then(response => response);
+    });
 
     // Get analytics for these videos
     const analyticsResponse = await youtubeAnalytics.reports.query({
@@ -136,13 +142,15 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
       startDate: '2020-01-01',
       endDate: new Date().toISOString().split('T')[0],
       filters: `video==${videoIds.join(',')}`
-    }).then(response => response);
+    });
+
+    const analyticsData = analyticsResponse.data as AnalyticsResponse;
 
     // Combine all data and generate AI insights
     return videosResponse.data.items?.map((video, index) => {
       const stats = statsResponse.data.items?.[index]?.statistics as VideoStats;
-      const analyticsRow = analyticsResponse.data.rows?.find(
-        (row: string[]) => row[0] === video.id?.videoId
+      const analyticsRow = analyticsData.rows?.find(
+        row => row[0] === video.id?.videoId
       );
       
       return {
@@ -159,7 +167,7 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
         insights: generateVideoInsights({
           title: video.snippet?.title || '',
           stats,
-          analytics: analyticsRow || []
+          analytics: analyticsRow?.map(String) || []
         })
       };
     }) || [];
