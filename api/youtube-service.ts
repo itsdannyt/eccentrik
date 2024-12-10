@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { youtube_v3, youtubeAnalytics_v2 } from 'googleapis';
-import { GaxiosPromise } from 'googleapis-common';
+import { GaxiosPromise, GaxiosResponse } from 'googleapis-common';
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -74,7 +74,7 @@ export async function getChannelAnalytics(accessToken: string) {
     const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
 
     // Get analytics data
-    const analyticsResponse = await youtubeAnalytics.reports.query.call(youtubeAnalytics.reports, {
+    const analyticsResponse = await youtubeAnalytics.reports.query({
       auth: oauth2Client,
       dimensions: 'video',
       metrics: 'estimatedMinutesWatched,views,likes,comments',
@@ -82,14 +82,14 @@ export async function getChannelAnalytics(accessToken: string) {
       startDate: '2020-01-01',
       endDate: new Date().toISOString().split('T')[0],
       sort: '-estimatedMinutesWatched'
-    });
+    }) as GaxiosResponse<QueryResponse>;
 
     return {
       overview: {
         totalViews: stats?.viewCount || '0',
         subscribers: stats?.subscriberCount || '0',
         totalVideos: stats?.videoCount || '0',
-        watchTime: (analyticsResponse.data.rows?.[0]?.[1] || 0).toString(),
+        watchTime: (analyticsResponse.data?.rows?.[0]?.[1] || 0).toString(),
         engagementRate: calculateEngagementRate(stats)
       },
       analyticsData: analyticsResponse.data
@@ -130,7 +130,7 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
     });
 
     // Get analytics for these videos
-    const analyticsResponse = await youtubeAnalytics.reports.query.call(youtubeAnalytics.reports, {
+    const analyticsResponse = await youtubeAnalytics.reports.query({
       auth: oauth2Client,
       dimensions: 'video',
       metrics: 'estimatedMinutesWatched,averageViewDuration,views,likes,comments',
@@ -138,13 +138,13 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
       startDate: '2020-01-01',
       endDate: new Date().toISOString().split('T')[0],
       filters: `video==${videoIds.join(',')}`
-    });
+    }) as GaxiosResponse<QueryResponse>;
 
     // Combine all data and generate AI insights
     return videosResponse.data.items?.map((video, index) => {
       const stats = statsResponse.data.items?.[index]?.statistics as VideoStats;
-      const analyticsRow = analyticsResponse.data.rows?.find(
-        row => row[0] === video.id?.videoId
+      const analyticsRow = analyticsResponse.data?.rows?.find(
+        (row: string[]) => row[0] === video.id?.videoId
       );
       
       return {
@@ -161,7 +161,7 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
         insights: generateVideoInsights({
           title: video.snippet?.title || '',
           stats,
-          analytics: analyticsRow?.map(val => val.toString()) || []
+          analytics: analyticsRow?.map((val: string | number) => val.toString()) || []
         })
       };
     }) || [];
