@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .button {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #4F46E5;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            margin: 20px 0;
+        }
+        .footer { font-size: 12px; color: #666; margin-top: 40px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Welcome to Content Performance Predictor!</h2>
+        
+        <p>Thanks for signing up! We're excited to help you analyze and optimize your YouTube content.</p>
+        
+        <p>Please confirm your email address by clicking the button below:</p>
+        
+        <a href="{{ .ConfirmationURL }}" class="button">Confirm Email Address</a>
+        
+        <p>Once confirmed, you'll be able to:</p>
+        <ul>
+            <li>Connect your YouTube channel</li>
+            <li>Access detailed analytics</li>
+            <li>Get AI-powered content insights</li>
+        </ul>
+        
+        <p>If you didn't create this account, you can safely ignore this email.</p>
+        
+        <div class="footer">
+            <p>This link will expire in 24 hours.</p>
+            <p>If the button doesn't work, copy and paste this URL into your browser:</p>
+            <p style="word-break: break-all;">{{ .ConfirmationURL }}</p>
+        </div>
+    </div>
+</body>
+</html>

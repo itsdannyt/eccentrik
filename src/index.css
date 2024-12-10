@@ -1,0 +1,93 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+@import './styles/custom-scrollbar.css';
+
+:root {
+  --primary: 32 100% 50%;
+  --primary-foreground: 0 0% 100%;
+  --background: 0 0% 0%;
+  --foreground: 0 0% 100%;
+  --border: 0 0% 20%;
+  --input: 0 0% 15%;
+  --ring: 32 100% 50%;
+  --radius: 0.5rem;
+}
+
+@layer base {
+  #root {
+    min-height: 100vh;
+    background-color: black;
+  }
+
+  body {
+    @apply text-white font-inter;
+    background-color: black;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-inter font-bold tracking-tight;
+  }
+
+  p {
+    @apply font-inter;
+  }
+}
+
+@layer utilities {
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+  
+  .text-gradient {
+    @apply bg-gradient-to-r from-orange-500 to-yellow-500 text-transparent bg-clip-text;
+  }
+  
+  .card-hover {
+    @apply transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-orange-500/10;
+  }
+  
+  .glass-effect {
+    @apply bg-white/5 backdrop-blur-lg border border-white/10;
+  }
+
+  .button-glow {
+    @apply relative overflow-hidden;
+  }
+
+  .button-glow::after {
+    @apply content-[''] absolute inset-0 rounded-xl;
+    background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    animation: button-glow 2s ease-in-out infinite;
+  }
+
+  .mask-bottom {
+    mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+  }
+
+  @keyframes button-glow {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes progress {
+    0% {
+      width: 0%;
+    }
+    100% {
+      width: 100%;
+    }
+  }
+
+  .animate-progress {
+    animation: progress 2s ease-in-out infinite;
+  }
+}
