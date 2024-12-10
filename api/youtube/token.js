@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 
-export async function handler(req, res) {
+export default async function handler(req, res) {
   console.log('Token endpoint called with method:', req.method);
 
   if (req.method !== 'POST') {
