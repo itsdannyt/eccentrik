@@ -1,6 +1,4 @@
-import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { youtube_v3, youtubeAnalytics_v2 } from 'googleapis';
 
 const handler = async (req: VercelRequest, res: VercelResponse) => {
   if (req.method !== 'GET') {
@@ -14,6 +12,8 @@ const handler = async (req: VercelRequest, res: VercelResponse) => {
   }
 
   try {
+    const { google } = await import('googleapis');
+    
     const oauth2Client = new google.auth.OAuth2();
     oauth2Client.setCredentials({ access_token: accessToken });
     

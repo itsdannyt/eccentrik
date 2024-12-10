@@ -1,9 +1,4 @@
-import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { youtube_v3 } from 'googleapis';
-
-const youtube = google.youtube('v3');
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 
 type YouTubeParams = {
   part?: string;
@@ -32,6 +27,10 @@ const handler = async (req: VercelRequest, res: VercelResponse) => {
   }
 
   try {
+    const { google } = await import('googleapis');
+    const youtube = google.youtube('v3');
+    const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+
     let auth;
     if (params.accessToken && typeof params.accessToken === 'string') {
       const oauth2Client = new google.auth.OAuth2();
@@ -91,4 +90,4 @@ const handler = async (req: VercelRequest, res: VercelResponse) => {
   }
 };
 
-export { handler };
+export default handler;
