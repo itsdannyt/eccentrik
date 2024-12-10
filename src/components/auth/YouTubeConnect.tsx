@@ -7,20 +7,28 @@ export function YouTubeConnect() {
   const { user, youtubeToken, setYoutubeToken } = useAuth();
 
   const handleConnectYouTube = async () => {
+    // Debug: Log environment variables
+    console.log('Client ID:', import.meta.env.VITE_YOUTUBE_CLIENT_ID);
+    console.log('Redirect URI:', import.meta.env.VITE_YOUTUBE_REDIRECT_URI);
+
     // Generate a random state value
     const state = Math.random().toString(36).substring(7);
     // Store state in sessionStorage for verification
     sessionStorage.setItem('youtube_oauth_state', state);
 
-    // Generate OAuth URL
-    const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-      `client_id=${import.meta.env.VITE_YOUTUBE_CLIENT_ID}&` +
-      `redirect_uri=${import.meta.env.VITE_YOUTUBE_REDIRECT_URI}&` +
-      `response_type=code&` +
-      `scope=https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly&` +
-      `access_type=offline&` +
-      `state=${state}&` +
-      `prompt=consent`;
+    // Generate OAuth URL with debug logging
+    const params = new URLSearchParams({
+      client_id: import.meta.env.VITE_YOUTUBE_CLIENT_ID,
+      redirect_uri: import.meta.env.VITE_YOUTUBE_REDIRECT_URI,
+      response_type: 'code',
+      scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly',
+      access_type: 'offline',
+      state: state,
+      prompt: 'consent'
+    });
+
+    const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    console.log('OAuth URL:', oauthUrl);
 
     // Open OAuth window
     window.location.href = oauthUrl;
@@ -32,6 +40,14 @@ export function YouTubeConnect() {
     const code = params.get('code');
     const state = params.get('state');
     const storedState = sessionStorage.getItem('youtube_oauth_state');
+    
+    // Debug: Log callback parameters
+    console.log('Callback params:', {
+      code: code ? 'present' : 'missing',
+      state,
+      storedState,
+      location: window.location.href
+    });
 
     if (code && state && storedState === state) {
       // Clear state from storage
@@ -50,6 +66,7 @@ export function YouTubeConnect() {
       })
         .then(response => response.json())
         .then(data => {
+          console.log('Token response:', data);
           if (data.access_token && user) {
             // Store token in user metadata
             supabase.auth.updateUser({
