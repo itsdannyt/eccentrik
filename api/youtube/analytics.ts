@@ -13,15 +13,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: accessToken });
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({ access_token: accessToken });
     
-    const youtube = google.youtube({ version: 'v3', auth });
-    const youtubeAnalytics = google.youtubeAnalytics({ version: 'v2', auth });
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+    const youtubeAnalytics = google.youtubeAnalytics({ version: 'v2', auth: oauth2Client });
 
     // Get channel details
     const channelResponse = await youtube.channels.list({
-      part: ['snippet,statistics,contentDetails'],
+      part: ['snippet', 'statistics', 'contentDetails'],
       mine: true
     });
 
@@ -32,11 +32,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Get analytics data
     const analyticsResponse = await youtubeAnalytics.reports.query({
-      dimensions: ['video'],
-      metrics: ['estimatedMinutesWatched', 'views', 'likes', 'subscribersGained'],
-      sort: ['-estimatedMinutesWatched'],
       ids: 'channel==MINE',
+      metrics: 'estimatedMinutesWatched,views,likes,subscribersGained',
+      dimensions: ['video'],
+      sort: '-estimatedMinutesWatched',
       startDate: '2020-01-01',
+      endDate: new Date().toISOString().split('T')[0],
       maxResults: 10
     });
 
@@ -47,7 +48,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         description: channel.snippet?.description,
         statistics: channel.statistics,
       },
-      analytics: analyticsResponse.data
+      analytics: analyticsResponse.data || {}
     });
   } catch (error: any) {
     console.error('YouTube Analytics API Error:', error);

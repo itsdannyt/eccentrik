@@ -16,16 +16,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    let response;
-    const auth = params.accessToken ? 
-      new google.auth.OAuth2().setCredentials({ access_token: params.accessToken }) : 
-      YOUTUBE_API_KEY;
+    let auth;
+    if (params.accessToken && typeof params.accessToken === 'string') {
+      const oauth2Client = new google.auth.OAuth2();
+      oauth2Client.setCredentials({ access_token: params.accessToken });
+      auth = oauth2Client;
+    } else {
+      auth = YOUTUBE_API_KEY;
+    }
 
+    let response;
     switch (endpoint) {
       case 'videos':
         response = await youtube.videos.list({
           auth,
-          part: params.part ? String(params.part).split(',') : ['snippet'],
+          part: typeof params.part === 'string' ? params.part.split(',') : ['snippet'],
           id: params.id as string,
           maxResults: params.maxResults ? Number(params.maxResults) : undefined
         });
@@ -34,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'channels':
         response = await youtube.channels.list({
           auth,
-          part: params.part ? String(params.part).split(',') : ['snippet'],
+          part: typeof params.part === 'string' ? params.part.split(',') : ['snippet'],
           id: params.id as string,
           mine: params.mine === 'true',
           forUsername: params.forUsername as string
@@ -44,9 +49,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'search':
         response = await youtube.search.list({
           auth,
-          part: params.part ? String(params.part).split(',') : ['snippet'],
+          part: typeof params.part === 'string' ? params.part.split(',') : ['snippet'],
           q: params.q as string,
-          type: params.type ? String(params.type).split(',') : undefined,
+          type: params.type ? (params.type as string).split(',') : undefined,
           videoCategoryId: params.videoCategoryId as string,
           order: params.order as string,
           maxResults: params.maxResults ? Number(params.maxResults) : undefined,
@@ -58,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'Invalid endpoint' });
     }
 
-    return res.status(200).json(response.data);
+    return res.status(200).json(response?.data || {});
   } catch (error: any) {
     console.error('YouTube API Error:', error);
     return res.status(500).json({ 

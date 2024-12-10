@@ -13,28 +13,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: accessToken });
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({ access_token: accessToken });
     
-    const youtube = google.youtube({ version: 'v3', auth });
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
     if (id) {
       // Get specific video(s) by ID
       const response = await youtube.videos.list({
-        part: ['snippet,statistics,contentDetails'],
+        part: ['snippet', 'statistics', 'contentDetails'],
         id: Array.isArray(id) ? id.join(',') : id
       });
-      return res.status(200).json(response.data);
+      return res.status(200).json(response.data || {});
     } else {
       // Get recent videos
       const response = await youtube.search.list({
-        part: ['id,snippet'],
+        part: ['id', 'snippet'],
         forMine: true,
         maxResults: 3,
         order: 'date',
-        type: 'video'
+        type: ['video']
       });
-      return res.status(200).json(response.data);
+      return res.status(200).json(response.data || {});
     }
   } catch (error: any) {
     console.error('YouTube Videos API Error:', error);
