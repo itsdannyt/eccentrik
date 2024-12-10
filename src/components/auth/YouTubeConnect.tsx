@@ -14,7 +14,7 @@ export function YouTubeConnect() {
 
     // Generate OAuth URL
     const oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-      `client_id=${import.meta.env.VITE_GOOGLE_CLIENT_ID}&` +
+      `client_id=${import.meta.env.VITE_YOUTUBE_CLIENT_ID}&` +
       `redirect_uri=${import.meta.env.VITE_YOUTUBE_REDIRECT_URI}&` +
       `response_type=code&` +
       `scope=https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly&` +
@@ -43,7 +43,10 @@ export function YouTubeConnect() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ 
+          code,
+          redirect_uri: import.meta.env.VITE_YOUTUBE_REDIRECT_URI 
+        }),
       })
         .then(response => response.json())
         .then(data => {
@@ -53,6 +56,8 @@ export function YouTubeConnect() {
               data: { youtube_token: data.access_token }
             }).then(() => {
               setYoutubeToken(data.access_token);
+              // Redirect to dashboard after successful connection
+              window.location.href = '/dashboard';
             });
           }
         })

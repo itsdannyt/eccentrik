@@ -5,7 +5,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { code } = req.body;
+  const { code, redirect_uri } = req.body;
 
   if (!code) {
     return res.status(400).json({ error: 'Authorization code is required' });
@@ -13,12 +13,16 @@ export default async function handler(req, res) {
 
   try {
     const oauth2Client = new google.auth.OAuth2(
-      process.env.VITE_GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.VITE_YOUTUBE_REDIRECT_URI
+      process.env.VITE_YOUTUBE_CLIENT_ID,
+      process.env.YOUTUBE_CLIENT_SECRET,
+      redirect_uri
     );
 
     const { tokens } = await oauth2Client.getToken(code);
+    
+    if (!tokens.access_token) {
+      throw new Error('No access token received');
+    }
 
     return res.status(200).json({
       access_token: tokens.access_token,
@@ -27,6 +31,9 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('Error exchanging code for token:', error);
-    return res.status(500).json({ error: 'Failed to exchange code for token' });
+    return res.status(500).json({ 
+      error: 'Failed to exchange code for token',
+      details: error.message 
+    });
   }
 }
