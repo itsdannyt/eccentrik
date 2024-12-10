@@ -10,6 +10,7 @@ export class YouTubeClient {
   private static instance: YouTubeClient | null = null;
   private cacheService: CacheService;
   private rateLimitService: RateLimitService;
+  private accessToken: string | null = null;
 
   private constructor() {
     this.cacheService = CacheService.getInstance();
@@ -23,6 +24,10 @@ export class YouTubeClient {
     return YouTubeClient.instance;
   }
 
+  public setAccessToken(token: string) {
+    this.accessToken = token;
+  }
+
   private calculateCTR(stats: any): number {
     const views = parseInt(stats.viewCount) || 0;
     const impressions = views * 1.5; // Estimated impression count
@@ -31,6 +36,10 @@ export class YouTubeClient {
 
   private async executeRequest(endpoint: string, params: Record<string, any>) {
     try {
+      if (!this.accessToken) {
+        throw new Error('Access token not set. Please authenticate first.');
+      }
+
       // Build the YouTube API URL with parameters
       const youtubeUrl = new URL(`${BASE_URL}/${endpoint}`);
       youtubeUrl.searchParams.append('key', YOUTUBE_API_KEY);
@@ -38,49 +47,30 @@ export class YouTubeClient {
         youtubeUrl.searchParams.append(key, String(value));
       }
 
+      // Add authorization header
+      const headers = {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Accept': 'application/json'
+      };
+
       // Log the request URL (without API key)
       const debugUrl = new URL(youtubeUrl.toString());
       debugUrl.searchParams.delete('key');
       console.log('Making request to:', debugUrl.toString());
 
-      // Use allorigins.win as a CORS proxy
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(youtubeUrl.toString())}`;
-      console.log('Using proxy URL:', proxyUrl);
-      
-      const response = await axios.get(proxyUrl);
+      // Make direct request with authorization header
+      const response = await axios.get(youtubeUrl.toString(), { headers });
       
       // Add detailed logging for debugging
-      console.log('Proxy response status:', response.status);
-      console.log('Proxy response headers:', response.headers);
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
       
       if (!response.data) {
-        console.error('Empty response from proxy');
-        throw new Error('Empty response from proxy');
+        console.error('Empty response from YouTube API');
+        throw new Error('Empty response from YouTube API');
       }
 
-      if (typeof response.data.contents === 'undefined') {
-        console.error('Response data structure:', response.data);
-        throw new Error('Invalid proxy response structure');
-      }
-
-      // Handle case where contents might be empty string
-      if (!response.data.contents) {
-        console.error('Empty contents in response:', response.data);
-        return { items: [] }; // Return empty result set
-      }
-
-      // Parse the contents, handling potential JSON parsing errors
-      try {
-        const contents = JSON.parse(response.data.contents);
-        console.log('Successfully parsed YouTube response');
-        return contents;
-      } catch (parseError) {
-        console.error('Failed to parse response contents:', {
-          error: parseError,
-          contents: response.data.contents.substring(0, 200) + '...' // Log first 200 chars
-        });
-        throw new Error('Invalid JSON in YouTube API response');
-      }
+      return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
         console.error('YouTube API Request Failed:', {
