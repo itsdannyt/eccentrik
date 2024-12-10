@@ -1,6 +1,6 @@
-const { google } = require('googleapis');
+import { google } from 'googleapis';
 
-module.exports = async function handler(req, res) {
+export async function handler(req, res) {
   console.log('Token endpoint called with method:', req.method);
 
   if (req.method !== 'POST') {
@@ -31,4 +31,4 @@ module.exports = async function handler(req, res) {
     console.error('Error in token exchange:', error);
     return res.status(500).json({ error: error.message });
   }
-};
+}
