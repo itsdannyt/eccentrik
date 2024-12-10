@@ -5,7 +5,6 @@ import { RateLimitService } from '../../services/RateLimitService';
 
 const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
 const BASE_URL = 'https://youtube.googleapis.com/youtube/v3';
-const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
 export class YouTubeClient {
   private static instance: YouTubeClient | null = null;
@@ -32,18 +31,21 @@ export class YouTubeClient {
 
   private async executeRequest(endpoint: string, params: Record<string, any>) {
     try {
-      const response = await axios.get(`${CORS_PROXY}${BASE_URL}/${endpoint}`, {
-        params: {
-          ...params,
-          key: YOUTUBE_API_KEY
-        },
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      });
-      return response.data;
+      // Build the YouTube API URL with parameters
+      const youtubeUrl = new URL(`${BASE_URL}/${endpoint}`);
+      youtubeUrl.searchParams.append('key', YOUTUBE_API_KEY);
+      for (const [key, value] of Object.entries(params)) {
+        youtubeUrl.searchParams.append(key, String(value));
+      }
+
+      // Use allorigins.win as a CORS proxy
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(youtubeUrl.toString())}`;
+      
+      const response = await axios.get(proxyUrl);
+      
+      // allorigins returns the response in a 'contents' property as a string
+      const contents = JSON.parse(response.data.contents);
+      return contents;
     } catch (error) {
       if (axios.isAxiosError(error)) {
         console.error('YouTube API Error:', {
