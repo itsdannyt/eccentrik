@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { youtube_v3, youtubeAnalytics_v2 } from 'googleapis';
+import { GaxiosPromise } from 'googleapis-common';
 
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -20,6 +21,8 @@ interface ChannelStats {
   viewCount?: string;
   subscriberCount?: string;
   videoCount?: string;
+  likeCount?: string;
+  commentCount?: string;
 }
 
 interface VideoStats {
@@ -58,7 +61,7 @@ export async function getChannelAnalytics(accessToken: string) {
       auth: oauth2Client,
       part: ['id', 'statistics'],
       mine: true
-    });
+    }).then(response => response);
 
     const channelId = channelResponse.data.items?.[0]?.id;
     if (!channelId) {
@@ -77,7 +80,7 @@ export async function getChannelAnalytics(accessToken: string) {
       startDate: '2020-01-01',
       endDate: new Date().toISOString().split('T')[0],
       sort: '-estimatedMinutesWatched'
-    });
+    }).then(response => response);
 
     return {
       overview: {
@@ -107,7 +110,7 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
       maxResults: 3,
       order: 'date',
       type: ['video']
-    });
+    }).then(response => response);
 
     const videoIds = videosResponse.data.items
       ?.map(item => item.id?.videoId)
@@ -122,7 +125,7 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
       auth: oauth2Client,
       part: ['statistics', 'contentDetails'],
       id: videoIds
-    });
+    }).then(response => response);
 
     // Get analytics for these videos
     const analyticsResponse = await youtubeAnalytics.reports.query({
@@ -133,12 +136,14 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
       startDate: '2020-01-01',
       endDate: new Date().toISOString().split('T')[0],
       filters: `video==${videoIds.join(',')}`
-    });
+    }).then(response => response);
 
     // Combine all data and generate AI insights
-    const videos = videosResponse.data.items?.map((video, index) => {
+    return videosResponse.data.items?.map((video, index) => {
       const stats = statsResponse.data.items?.[index]?.statistics as VideoStats;
-      const analytics = analyticsResponse.data.rows?.find(row => row[0] === video.id?.videoId);
+      const analyticsRow = analyticsResponse.data.rows?.find(
+        (row: string[]) => row[0] === video.id?.videoId
+      );
       
       return {
         id: video.id?.videoId,
@@ -147,40 +152,38 @@ export async function getRecentVideosWithAnalytics(accessToken: string) {
         publishedAt: video.snippet?.publishedAt,
         stats,
         analytics: {
-          watchTime: analytics?.[1]?.toString() || '0',
-          avgViewDuration: analytics?.[2]?.toString() || '0',
+          watchTime: analyticsRow?.[1]?.toString() || '0',
+          avgViewDuration: analyticsRow?.[2]?.toString() || '0',
           engagementRate: calculateVideoEngagementRate(stats)
         },
         insights: generateVideoInsights({
           title: video.snippet?.title || '',
           stats,
-          analytics: analyticsResponse.data.rows?.[index]
+          analytics: analyticsRow || []
         })
       };
-    });
-
-    return videos || [];
+    }) || [];
   } catch (error) {
-    console.error('Error fetching recent videos:', error);
+    console.error('Error fetching video analytics:', error);
     throw error;
   }
 }
 
-function calculateEngagementRate(stats: ChannelStats) {
+function calculateEngagementRate(stats: ChannelStats): string {
   if (!stats?.viewCount) return '0';
   const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
   const views = parseInt(stats.viewCount);
   return ((interactions / views) * 100).toFixed(2);
 }
 
-function calculateVideoEngagementRate(stats: VideoStats) {
+function calculateVideoEngagementRate(stats: VideoStats): string {
   if (!stats?.viewCount) return '0';
   const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
   const views = parseInt(stats.viewCount);
   return ((interactions / views) * 100).toFixed(2);
 }
 
-function generateVideoInsights(data: { title: string; stats: VideoStats; analytics: any[] }): VideoInsights[] {
+function generateVideoInsights(data: { title: string; stats: VideoStats; analytics: string[] }): VideoInsights[] {
   const insights: VideoInsights[] = [];
   
   // View performance
