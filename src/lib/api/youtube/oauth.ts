@@ -15,8 +15,8 @@ export class YouTubeOAuth {
   private redirectUri: string;
 
   constructor() {
-    this.clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    this.clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
+    this.clientId = import.meta.env.VITE_YOUTUBE_CLIENT_ID;
+    this.clientSecret = import.meta.env.VITE_YOUTUBE_CLIENT_SECRET;
     this.redirectUri = `${window.location.origin}/auth/callback`;
   }
 

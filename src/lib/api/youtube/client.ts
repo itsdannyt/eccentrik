@@ -2,6 +2,7 @@ import axios from 'axios';
 import { VideoStats, HistoricalData } from './types';
 import { CacheService } from '../../services/CacheService';
 import { RateLimitService } from '../../services/RateLimitService';
+import { google } from 'googleapis';
 
 const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
 const BASE_URL = 'https://youtube.googleapis.com/youtube/v3';
@@ -11,6 +12,7 @@ export class YouTubeClient {
   private cacheService: CacheService;
   private rateLimitService: RateLimitService;
   private accessToken: string | null = null;
+  private youtubeAnalytics: any;
 
   private constructor() {
     this.cacheService = CacheService.getInstance();
@@ -26,12 +28,9 @@ export class YouTubeClient {
 
   public setAccessToken(token: string) {
     this.accessToken = token;
-  }
-
-  private calculateCTR(stats: any): number {
-    const views = parseInt(stats.viewCount) || 0;
-    const impressions = views * 1.5; // Estimated impression count
-    return Math.round((views / impressions) * 100);
+    const auth = new google.auth.OAuth2();
+    auth.setCredentials({ access_token: token });
+    this.youtubeAnalytics = google.youtubeAnalytics({ version: 'v2', auth });
   }
 
   private async executeRequest(endpoint: string, params: Record<string, any>) {
@@ -101,21 +100,14 @@ export class YouTubeClient {
       // Get basic channel statistics
       const stats = channelResponse.items[0].statistics;
 
-      // Get analytics data from YouTube Analytics API
-      const analyticsUrl = 'https://youtubeanalytics.googleapis.com/v2/reports';
-      const analyticsResponse = await axios.get(analyticsUrl, {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Accept': 'application/json'
-        },
-        params: {
-          dimensions: 'video',
-          metrics: 'estimatedMinutesWatched,views,likes,comments',
-          ids: `channel==${channelId}`,
-          startDate: '2020-01-01',
-          endDate: new Date().toISOString().split('T')[0],
-          sort: '-estimatedMinutesWatched'
-        }
+      // Get analytics data using the YouTube Analytics API client
+      const analyticsResponse = await this.youtubeAnalytics.reports.query({
+        dimensions: 'video',
+        metrics: 'estimatedMinutesWatched,views,likes,comments',
+        ids: `channel==${channelId}`,
+        startDate: '2020-01-01',
+        endDate: new Date().toISOString().split('T')[0],
+        sort: '-estimatedMinutesWatched'
       });
 
       return {
@@ -159,21 +151,14 @@ export class YouTubeClient {
         id: videoIds.join(',')
       });
 
-      // Get analytics for these videos from YouTube Analytics API
-      const analyticsUrl = 'https://youtubeanalytics.googleapis.com/v2/reports';
-      const analyticsResponse = await axios.get(analyticsUrl, {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Accept': 'application/json'
-        },
-        params: {
-          dimensions: 'video',
-          metrics: 'estimatedMinutesWatched,averageViewDuration,views,likes,comments',
-          ids: 'channel==MINE',
-          startDate: '2020-01-01',
-          endDate: new Date().toISOString().split('T')[0],
-          filters: `video==${videoIds.join(',')}`
-        }
+      // Get analytics for these videos using the YouTube Analytics API client
+      const analyticsResponse = await this.youtubeAnalytics.reports.query({
+        dimensions: 'video',
+        metrics: 'estimatedMinutesWatched,averageViewDuration,views,likes,comments',
+        ids: 'channel==MINE',
+        startDate: '2020-01-01',
+        endDate: new Date().toISOString().split('T')[0],
+        filters: `video==${videoIds.join(',')}`
       });
 
       // Combine all data
@@ -211,75 +196,10 @@ export class YouTubeClient {
     }
   }
 
-  private calculateVideoEngagementRate(stats: any): string {
-    if (!stats?.viewCount) return '0';
-    const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
-    const views = parseInt(stats.viewCount);
-    return ((interactions / views) * 100).toFixed(2);
-  }
-
-  private generateVideoInsights(data: { title: string; stats: any; analytics: string[] }): Array<{ type: 'improvement' | 'success'; message: string }> {
-    const insights: Array<{ type: 'improvement' | 'success'; message: string }> = [];
-    
-    // View performance
-    const viewCount = parseInt(data.stats?.viewCount || '0');
-    
-    if (viewCount < 100) {
-      insights.push({
-        type: 'improvement',
-        message: 'This video has low views. Consider improving your thumbnail and title for better visibility.'
-      });
-    } else if (viewCount > 1000) {
-      insights.push({
-        type: 'success',
-        message: 'This video is performing well in terms of views!'
-      });
-    }
-
-    // Engagement metrics
-    const likeCount = parseInt(data.stats?.likeCount || '0');
-    const commentCount = parseInt(data.stats?.commentCount || '0');
-    const engagementRate = ((likeCount + commentCount) / viewCount) * 100;
-
-    if (engagementRate < 5) {
-      insights.push({
-        type: 'improvement',
-        message: 'Try to increase engagement by asking questions in your video or encouraging comments.'
-      });
-    } else if (engagementRate > 10) {
-      insights.push({
-        type: 'success',
-        message: 'Great engagement! Your audience is actively interacting with this content.'
-      });
-    }
-
-    return insights;
-  }
-
-  private extractTopVideos(videos: any[], stats: VideoStats[]): Array<{ title: string; ctr: number; engagement: number }> {
-    return videos.map((video, index) => ({
-      title: video.snippet.title,
-      ctr: this.calculateCTR(stats[index]),
-      engagement: Math.round((parseInt(stats[index].likeCount) + parseInt(stats[index].commentCount)) / parseInt(stats[index].viewCount) * 100)
-    })).sort((a, b) => b.ctr - a.ctr).slice(0, 5);
-  }
-
-  private extractKeywords(videos: any[]): string[] {
-    const keywords = new Set<string>();
-    videos.forEach(video => {
-      const title = video.snippet.title.toLowerCase();
-      const words = title.split(' ')
-        .filter((word: string) => word.length > 3)
-        .map((word: string) => word.replace(/[^\w\s]/g, ''));
-      words.forEach((word: string) => keywords.add(word));
-    });
-    return Array.from(keywords).slice(0, 10);
-  }
-
-  private calculateAverageCTR(stats: VideoStats[]): number {
-    if (!stats.length) return 0;
-    const total = stats.reduce((sum, stat) => sum + stat.ctr, 0);
-    return Math.round(total / stats.length);
+  private calculateCTR(stats: any): number {
+    const views = parseInt(stats.viewCount) || 0;
+    const impressions = views * 1.5; // Estimated impression count
+    return Math.round((views / impressions) * 100);
   }
 
   private async get30DayAnalytics(channelId: string, userId: string) {
@@ -287,7 +207,7 @@ export class YouTubeClient {
     const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     const analyticsResponse = await this.rateLimitService.executeWithRetry(userId, async () => {
-      return this.executeRequest('youtubeAnalytics/v2/reports', {
+      return this.youtubeAnalytics.reports.query({
         ids: `channel==${channelId}`,
         startDate,
         endDate,
@@ -476,5 +396,76 @@ export class YouTubeClient {
       commentCount: item.statistics.commentCount || '0',
       ctr: this.calculateCTR(item.statistics)
     }));
+  }
+
+  private calculateVideoEngagementRate(stats: any): string {
+    if (!stats?.viewCount) return '0';
+    const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
+    const views = parseInt(stats.viewCount);
+    return ((interactions / views) * 100).toFixed(2);
+  }
+
+  private generateVideoInsights(data: { title: string; stats: any; analytics: string[] }): Array<{ type: 'improvement' | 'success'; message: string }> {
+    const insights: Array<{ type: 'improvement' | 'success'; message: string }> = [];
+    
+    // View performance
+    const viewCount = parseInt(data.stats?.viewCount || '0');
+    
+    if (viewCount < 100) {
+      insights.push({
+        type: 'improvement',
+        message: 'This video has low views. Consider improving your thumbnail and title for better visibility.'
+      });
+    } else if (viewCount > 1000) {
+      insights.push({
+        type: 'success',
+        message: 'This video is performing well in terms of views!'
+      });
+    }
+
+    // Engagement metrics
+    const likeCount = parseInt(data.stats?.likeCount || '0');
+    const commentCount = parseInt(data.stats?.commentCount || '0');
+    const engagementRate = ((likeCount + commentCount) / viewCount) * 100;
+
+    if (engagementRate < 5) {
+      insights.push({
+        type: 'improvement',
+        message: 'Try to increase engagement by asking questions in your video or encouraging comments.'
+      });
+    } else if (engagementRate > 10) {
+      insights.push({
+        type: 'success',
+        message: 'Great engagement! Your audience is actively interacting with this content.'
+      });
+    }
+
+    return insights;
+  }
+
+  private extractTopVideos(videos: any[], stats: VideoStats[]): Array<{ title: string; ctr: number; engagement: number }> {
+    return videos.map((video, index) => ({
+      title: video.snippet.title,
+      ctr: this.calculateCTR(stats[index]),
+      engagement: Math.round((parseInt(stats[index].likeCount) + parseInt(stats[index].commentCount)) / parseInt(stats[index].viewCount) * 100)
+    })).sort((a, b) => b.ctr - a.ctr).slice(0, 5);
+  }
+
+  private extractKeywords(videos: any[]): string[] {
+    const keywords = new Set<string>();
+    videos.forEach(video => {
+      const title = video.snippet.title.toLowerCase();
+      const words = title.split(' ')
+        .filter((word: string) => word.length > 3)
+        .map((word: string) => word.replace(/[^\w\s]/g, ''));
+      words.forEach((word: string) => keywords.add(word));
+    });
+    return Array.from(keywords).slice(0, 10);
+  }
+
+  private calculateAverageCTR(stats: VideoStats[]): number {
+    if (!stats.length) return 0;
+    const total = stats.reduce((sum, stat) => sum + stat.ctr, 0);
+    return Math.round(total / stats.length);
   }
 }
