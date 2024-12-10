@@ -41,51 +41,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       auth = YOUTUBE_API_KEY;
     }
 
-    let response: youtube_v3.Schema$VideoListResponse | youtube_v3.Schema$ChannelListResponse | youtube_v3.Schema$SearchListResponse;
-
-    const commonParams = {
-      auth,
-      part: params.part?.split(',') as string[]
-    };
+    const parts = params.part?.split(',') || ['snippet'];
 
     switch (endpoint) {
-      case 'videos':
+      case 'videos': {
         const videoResponse = await youtube.videos.list({
-          ...commonParams,
+          auth,
+          part: parts,
           id: params.id,
-          maxResults: params.maxResults
+          maxResults: params.maxResults ? Number(params.maxResults) : undefined
         });
-        response = videoResponse.data;
-        break;
+        return res.status(200).json(videoResponse.data || {});
+      }
 
-      case 'channels':
+      case 'channels': {
         const channelResponse = await youtube.channels.list({
-          ...commonParams,
+          auth,
+          part: parts,
           id: params.id,
-          mine: params.mine,
+          mine: params.mine === 'true',
           forUsername: params.forUsername
         });
-        response = channelResponse.data;
-        break;
+        return res.status(200).json(channelResponse.data || {});
+      }
 
-      case 'search':
+      case 'search': {
         const searchResponse = await youtube.search.list({
-          ...commonParams,
+          auth,
+          part: parts,
           q: params.q,
-          type: params.type?.split(',') as string[],
+          type: params.type?.split(','),
           videoCategoryId: params.videoCategoryId,
-          order: params.order as string,
-          maxResults: params.maxResults,
-          forMine: params.forMine
+          order: params.order,
+          maxResults: params.maxResults ? Number(params.maxResults) : undefined,
+          forMine: params.forMine === 'true'
         });
-        response = searchResponse.data;
-        break;
+        return res.status(200).json(searchResponse.data || {});
+      }
 
       default:
         return res.status(400).json({ error: 'Invalid endpoint' });
     }
-
-    return res.status(200).json(response || {});
   } catch (error: any) {
     console.error('YouTube API Error:', error);
     return res.status(500).json({ 

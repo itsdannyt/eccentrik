@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { youtube_v3 } from 'googleapis';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
@@ -13,18 +14,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: accessToken });
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({ access_token: accessToken });
     
-    const youtube = google.youtube({ version: 'v3', auth });
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
     const response = await youtube.channels.list({
-      part: ['snippet,statistics,contentDetails'],
-      id: id as string,
-      ...(publishedBefore && { publishedBefore: publishedBefore as string })
+      part: ['snippet', 'statistics', 'contentDetails'],
+      id: typeof id === 'string' ? id : undefined,
+      publishedBefore: typeof publishedBefore === 'string' ? publishedBefore : undefined
     });
 
-    return res.status(200).json(response.data);
+    return res.status(200).json(response.data || {});
   } catch (error: any) {
     console.error('YouTube Channels API Error:', error);
     return res.status(500).json({ 
