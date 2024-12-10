@@ -3,7 +3,9 @@ import { VideoStats, HistoricalData } from './types';
 import { CacheService } from '../../services/CacheService';
 import { RateLimitService } from '../../services/RateLimitService';
 
-const BASE_URL = '/api/youtube';
+const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
+const BASE_URL = 'https://youtube.googleapis.com/youtube/v3';
+const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
 export class YouTubeClient {
   private static instance: YouTubeClient | null = null;
@@ -30,10 +32,15 @@ export class YouTubeClient {
 
   private async executeRequest(endpoint: string, params: Record<string, any>) {
     try {
-      const response = await axios.get(BASE_URL, {
+      const response = await axios.get(`${CORS_PROXY}${BASE_URL}/${endpoint}`, {
         params: {
-          endpoint,
-          ...params
+          ...params,
+          key: YOUTUBE_API_KEY
+        },
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
         }
       });
       return response.data;
@@ -43,7 +50,7 @@ export class YouTubeClient {
           message: error.message,
           response: error.response?.data
         });
-        throw new Error(error.response?.data?.error || 'Failed to fetch data from YouTube API');
+        throw new Error(error.response?.data?.error?.message || 'Failed to fetch data from YouTube API');
       }
       throw error;
     }
