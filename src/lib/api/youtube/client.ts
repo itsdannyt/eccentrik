@@ -61,7 +61,6 @@ export class YouTubeClient {
       // Make direct request with authorization header
       const response = await axios.get(youtubeUrl.toString(), { headers });
       
-      // Add detailed logging for debugging
       console.log('Response status:', response.status);
       console.log('Response headers:', response.headers);
       
@@ -84,6 +83,177 @@ export class YouTubeClient {
       console.error('Unexpected error in executeRequest:', error);
       throw error;
     }
+  }
+
+  public async getChannelAnalytics() {
+    try {
+      // Get channel ID first
+      const channelResponse = await this.executeRequest('channels', {
+        part: 'id,statistics',
+        mine: true
+      });
+
+      const channelId = channelResponse.items?.[0]?.id;
+      if (!channelId) {
+        throw new Error('Channel ID not found');
+      }
+      
+      // Get basic channel statistics
+      const stats = channelResponse.items[0].statistics;
+
+      // Get analytics data from YouTube Analytics API
+      const analyticsUrl = 'https://youtubeanalytics.googleapis.com/v2/reports';
+      const analyticsResponse = await axios.get(analyticsUrl, {
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Accept': 'application/json'
+        },
+        params: {
+          dimensions: 'video',
+          metrics: 'estimatedMinutesWatched,views,likes,comments',
+          ids: `channel==${channelId}`,
+          startDate: '2020-01-01',
+          endDate: new Date().toISOString().split('T')[0],
+          sort: '-estimatedMinutesWatched'
+        }
+      });
+
+      return {
+        overview: {
+          totalViews: stats.viewCount || '0',
+          subscribers: stats.subscriberCount || '0',
+          totalVideos: stats.videoCount || '0',
+          watchTime: (analyticsResponse.data.rows?.[0]?.[1] || 0).toString(),
+          engagementRate: this.calculateEngagementRate(stats)
+        },
+        analyticsData: analyticsResponse.data
+      };
+    } catch (error) {
+      console.error('Error fetching channel analytics:', error);
+      throw error;
+    }
+  }
+
+  public async getRecentVideos() {
+    try {
+      // Get recent videos
+      const videosResponse = await this.executeRequest('search', {
+        part: 'id,snippet',
+        forMine: true,
+        maxResults: 3,
+        order: 'date',
+        type: 'video'
+      });
+
+      const videoIds = videosResponse.items
+        ?.map(item => item.id?.videoId)
+        .filter((id): id is string => !!id) || [];
+
+      if (videoIds.length === 0) {
+        return [];
+      }
+
+      // Get detailed video statistics
+      const statsResponse = await this.executeRequest('videos', {
+        part: 'statistics,contentDetails',
+        id: videoIds.join(',')
+      });
+
+      // Get analytics for these videos from YouTube Analytics API
+      const analyticsUrl = 'https://youtubeanalytics.googleapis.com/v2/reports';
+      const analyticsResponse = await axios.get(analyticsUrl, {
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Accept': 'application/json'
+        },
+        params: {
+          dimensions: 'video',
+          metrics: 'estimatedMinutesWatched,averageViewDuration,views,likes,comments',
+          ids: 'channel==MINE',
+          startDate: '2020-01-01',
+          endDate: new Date().toISOString().split('T')[0],
+          filters: `video==${videoIds.join(',')}`
+        }
+      });
+
+      // Combine all data
+      return videosResponse.items?.map((video, index) => {
+        const stats = statsResponse.items?.[index]?.statistics;
+        const analyticsRow = analyticsResponse.data.rows?.find(
+          row => row[0] === video.id?.videoId
+        );
+        
+        return {
+          id: video.id?.videoId,
+          title: video.snippet?.title,
+          thumbnail: video.snippet?.thumbnails?.high?.url,
+          publishedAt: video.snippet?.publishedAt,
+          stats: {
+            views: stats?.viewCount || '0',
+            likes: stats?.likeCount || '0',
+            comments: stats?.commentCount || '0'
+          },
+          analytics: {
+            watchTime: (analyticsRow?.[1] || 0).toString(),
+            avgViewDuration: (analyticsRow?.[2] || 0).toString(),
+            engagementRate: this.calculateVideoEngagementRate(stats || {})
+          },
+          insights: this.generateVideoInsights({
+            title: video.snippet?.title || '',
+            stats: stats || {},
+            analytics: analyticsRow?.map(val => val.toString()) || []
+          })
+        };
+      }) || [];
+    } catch (error) {
+      console.error('Error fetching recent videos:', error);
+      throw error;
+    }
+  }
+
+  private calculateVideoEngagementRate(stats: any): string {
+    if (!stats?.viewCount) return '0';
+    const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
+    const views = parseInt(stats.viewCount);
+    return ((interactions / views) * 100).toFixed(2);
+  }
+
+  private generateVideoInsights(data: { title: string; stats: any; analytics: string[] }): Array<{ type: 'improvement' | 'success'; message: string }> {
+    const insights: Array<{ type: 'improvement' | 'success'; message: string }> = [];
+    
+    // View performance
+    const viewCount = parseInt(data.stats?.viewCount || '0');
+    
+    if (viewCount < 100) {
+      insights.push({
+        type: 'improvement',
+        message: 'This video has low views. Consider improving your thumbnail and title for better visibility.'
+      });
+    } else if (viewCount > 1000) {
+      insights.push({
+        type: 'success',
+        message: 'This video is performing well in terms of views!'
+      });
+    }
+
+    // Engagement metrics
+    const likeCount = parseInt(data.stats?.likeCount || '0');
+    const commentCount = parseInt(data.stats?.commentCount || '0');
+    const engagementRate = ((likeCount + commentCount) / viewCount) * 100;
+
+    if (engagementRate < 5) {
+      insights.push({
+        type: 'improvement',
+        message: 'Try to increase engagement by asking questions in your video or encouraging comments.'
+      });
+    } else if (engagementRate > 10) {
+      insights.push({
+        type: 'success',
+        message: 'Great engagement! Your audience is actively interacting with this content.'
+      });
+    }
+
+    return insights;
   }
 
   private extractTopVideos(videos: any[], stats: VideoStats[]): Array<{ title: string; ctr: number; engagement: number }> {
