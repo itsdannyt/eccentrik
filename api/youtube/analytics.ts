@@ -29,10 +29,10 @@ function calculateEngagementRate(stats: ChannelStats): string {
   return ((interactions / views) * 100).toFixed(2);
 }
 
-const handler = async (
+async function handler(
   req: VercelRequest,
   res: VercelResponse
-): Promise<void> => {
+): Promise<void> {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
@@ -99,6 +99,6 @@ const handler = async (
     console.error('Error fetching YouTube analytics:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
-};
+}
 
-export default handler;
+export { handler as default };
