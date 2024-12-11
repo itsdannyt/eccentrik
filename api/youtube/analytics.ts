@@ -47,17 +47,18 @@ async function handler(
 
     const accessToken = authorization.replace('Bearer ', '');
     
-    const oauth2Client = new google.auth.GoogleAuth({
-      credentials: {
-        access_token: accessToken,
-        client_id: process.env.VITE_YOUTUBE_CLIENT_ID,
-        client_secret: process.env.VITE_YOUTUBE_CLIENT_SECRET,
-        redirect_uri: process.env.VITE_YOUTUBE_REDIRECT_URI
-      },
-      scopes: [
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.VITE_YOUTUBE_CLIENT_ID,
+      process.env.VITE_YOUTUBE_CLIENT_SECRET,
+      process.env.VITE_YOUTUBE_REDIRECT_URI
+    );
+
+    oauth2Client.setCredentials({
+      access_token: accessToken,
+      scope: [
         'https://www.googleapis.com/auth/youtube.readonly',
         'https://www.googleapis.com/auth/yt-analytics.readonly'
-      ]
+      ].join(' ')
     });
 
     const youtube = google.youtube('v3');
