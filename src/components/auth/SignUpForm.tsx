@@ -61,37 +61,29 @@ export function SignUpForm() {
         return;
       }
 
-      // Sign up user
-      console.log('Channel validated, proceeding with sign-up');
-      const { data: signUpData, confirmEmail } = await signUp({
+      // Store form data and channel data in sessionStorage
+      sessionStorage.setItem('signUpData', JSON.stringify({
         email: data.email,
         password: data.password,
         fullName: data.fullName,
-        metadata: {
-          youtubeChannel: data.youtubeChannel,
-          channelId: channelData.id,
-          channelTitle: channelData.title,
-          channelStats: channelData.statistics,
-        },
-      });
+        channelData: {
+          url: data.youtubeChannel,
+          id: channelData.id,
+          title: channelData.title,
+          statistics: channelData.statistics,
+        }
+      }));
 
-      console.log('Sign-up response:', { confirmEmail, userId: signUpData?.user?.id });
-
-      // Store channel data for after verification
-      localStorage.setItem('pendingYouTubeChannel', JSON.stringify(channelData));
-
-      if (confirmEmail) {
-        toast.success(
-          'Account created! Please check your email for a confirmation link. ' +
-          'Click the link to verify your account and connect your YouTube channel.',
-          { duration: 8000 }
-        );
-      } else {
-        console.log('Email already confirmed, proceeding to YouTube OAuth');
-        const youtubeOAuth = new YouTubeOAuth();
-        const authUrl = youtubeOAuth.getAuthUrl();
-        window.location.href = authUrl;
-      }
+      // Initiate YouTube OAuth first
+      console.log('Channel validated, proceeding to YouTube OAuth');
+      const youtubeOAuth = new YouTubeOAuth();
+      const authUrl = youtubeOAuth.getAuthUrl();
+      
+      // Store a flag to indicate we're in signup flow
+      sessionStorage.setItem('isSignUpFlow', 'true');
+      
+      // Redirect to YouTube OAuth
+      window.location.href = authUrl;
     } catch (error) {
       console.error('Sign-up error details:', {
         error,
@@ -99,28 +91,11 @@ export function SignUpForm() {
         stack: error instanceof Error ? error.stack : undefined,
       });
 
-      // Handle specific error cases
-      if (error instanceof Error) {
-        const errorMessage = error.message.toLowerCase();
-        if (errorMessage.includes('already registered')) {
-          toast.error('This email is already registered. Please try logging in instead.');
-          navigate('/login');
-          return;
-        } else if (errorMessage.includes('password')) {
-          toast.error(error.message);
-          return;
-        } else if (errorMessage.includes('invalid email')) {
-          toast.error('Please enter a valid email address.');
-          return;
-        } else if (errorMessage.includes('api key')) {
-          toast.error('YouTube API configuration error. Please try again later.');
-          return;
-        }
-        // Show the actual error message
-        toast.error(`Sign-up failed: ${error.message}`);
-      } else {
-        toast.error('Failed to create account. Please try again.');
-      }
+      toast.error(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to create account. Please try again.'
+      );
     }
   };
 

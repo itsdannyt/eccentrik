@@ -1,18 +1,87 @@
 import { useState, useCallback } from 'react';
 
-// Make sure this matches exactly with your .env.local
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const REDIRECT_URI = 'http://localhost:5174/auth/callback';
+const GOOGLE_CLIENT_SECRET = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
+const YOUTUBE_REDIRECT_URI = import.meta.env.VITE_YOUTUBE_REDIRECT_URI;
 
-if (!GOOGLE_CLIENT_ID) {
-  console.error('VITE_GOOGLE_CLIENT_ID is not defined in environment variables');
-}
+// Constants for OAuth state
+const STATE_KEY = 'youtube_oauth_state'; // Match the key used in YouTubeConnect
+const STATE_TIMESTAMP_KEY = 'youtube_oauth_timestamp';
+const SIGNUP_DATA_KEY = 'signUpData';
+const SIGNUP_FLOW_KEY = 'isSignUpFlow';
+const STATE_EXPIRATION_MS = 10 * 60 * 1000; // 10 minutes
+
+// Storage helper functions
+const storeState = (state: string) => {
+  const timestamp = Date.now();
+  console.log('Storing state:', { state, timestamp });
+  
+  try {
+    // Clear any existing state first
+    sessionStorage.removeItem(STATE_KEY);
+    sessionStorage.removeItem(STATE_TIMESTAMP_KEY);
+    
+    // Store new state
+    sessionStorage.setItem(STATE_KEY, state);
+    sessionStorage.setItem(STATE_TIMESTAMP_KEY, timestamp.toString());
+    
+    // Verify storage
+    const storedState = sessionStorage.getItem(STATE_KEY);
+    const storedTimestamp = sessionStorage.getItem(STATE_TIMESTAMP_KEY);
+    console.log('Verifying stored state:', { 
+      storedState, 
+      storedTimestamp,
+      stateMatches: storedState === state,
+      timestampMatches: storedTimestamp === timestamp.toString()
+    });
+    
+    if (!storedState || storedState !== state || !storedTimestamp) {
+      throw new Error('State storage verification failed');
+    }
+  } catch (e) {
+    console.error('Failed to store state:', e);
+    // Clean up any partial state
+    sessionStorage.removeItem(STATE_KEY);
+    sessionStorage.removeItem(STATE_TIMESTAMP_KEY);
+    throw e;
+  }
+};
+
+const getState = () => {
+  try {
+    const state = sessionStorage.getItem(STATE_KEY);
+    const timestampStr = sessionStorage.getItem(STATE_TIMESTAMP_KEY);
+    const timestamp = timestampStr ? parseInt(timestampStr, 10) : 0;
+
+    console.log('Retrieved state:', { state, timestamp, now: Date.now() });
+    
+    // Validate timestamp
+    if (timestamp && Date.now() - timestamp > STATE_EXPIRATION_MS) {
+      console.log('State expired, clearing...');
+      clearState();
+      return { state: null, timestamp: 0 };
+    }
+
+    return { state, timestamp };
+  } catch (e) {
+    console.error('Failed to get state:', e);
+    clearState();
+    return { state: null, timestamp: 0 };
+  }
+};
+
+const clearState = () => {
+  console.log('Clearing OAuth state');
+  sessionStorage.removeItem(STATE_KEY);
+  sessionStorage.removeItem(STATE_TIMESTAMP_KEY);
+};
 
 interface GoogleAuthResponse {
   access_token: string;
   token_type: string;
   expires_in: number;
   scope: string;
+  refresh_token?: string;
 }
 
 interface UseGoogleAuthProps {
@@ -23,71 +92,112 @@ interface UseGoogleAuthProps {
 export function useGoogleAuth({ onSuccess, onError }: UseGoogleAuthProps) {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  const initiateAuth = useCallback(() => {
-    if (!GOOGLE_CLIENT_ID) {
-      onError?.(new Error('Google Client ID is not configured'));
-      return;
-    }
-
-    setIsAuthenticating(true);
-
-    // Define required scopes for YouTube access
-    const scopes = [
-      'https://www.googleapis.com/auth/youtube.readonly',
-      'https://www.googleapis.com/auth/youtube.force-ssl',
-      'https://www.googleapis.com/auth/youtube'
-    ];
-    const scope = encodeURIComponent(scopes.join(' '));
-    
-    // Generate and store state
-    const state = Math.random().toString(36).substring(7);
-    try {
-      // Store state in localStorage instead of sessionStorage
-      localStorage.setItem('oauth_state', state);
-      
-      // Also store a timestamp to expire old states
-      localStorage.setItem('oauth_state_timestamp', Date.now().toString());
-    } catch (error) {
-      console.error('Failed to store OAuth state:', error);
-      onError?.(new Error('Failed to initialize authentication'));
-      return;
-    }
-
-    // Construct auth URL with correct parameters
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-      `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
-      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-      `&response_type=code` +
-      `&scope=${scope}` +
-      `&state=${state}` +
-      `&access_type=offline` +
-      `&prompt=consent`;
-
-    window.location.href = authUrl;
+  const handleError = useCallback((error: Error | string) => {
+    const errorObj = error instanceof Error ? error : new Error(error);
+    console.error('Google Auth Error:', errorObj);
+    onError?.(errorObj);
+    setIsAuthenticating(false);
   }, [onError]);
 
-  const handleCallback = useCallback(async (params: URLSearchParams) => {
+  const initiateAuth = useCallback(() => {
+    if (!GOOGLE_CLIENT_ID) {
+      handleError('Google Client ID is not configured');
+      return;
+    }
+
     try {
-      const storedState = localStorage.getItem('oauth_state');
-      const stateTimestamp = parseInt(localStorage.getItem('oauth_state_timestamp') || '0');
-      const returnedState = params.get('state');
+      console.log('Initiating OAuth flow...');
+      setIsAuthenticating(true);
 
-      // Clear stored state
-      localStorage.removeItem('oauth_state');
-      localStorage.removeItem('oauth_state_timestamp');
+      // Define required scopes for YouTube access
+      const scopes = [
+        'https://www.googleapis.com/auth/youtube',
+        'https://www.googleapis.com/auth/youtube.readonly',
+        'https://www.googleapis.com/auth/yt-analytics.readonly'
+      ].join(' ');
 
-      // Verify state is valid and not expired (30 minutes max)
-      const stateAge = Date.now() - stateTimestamp;
-      if (!storedState || storedState !== returnedState || stateAge > 30 * 60 * 1000) {
-        throw new Error('Invalid or expired state parameter');
+      // Debug scope before encoding
+      console.log('Raw scopes:', scopes);
+      
+      // Generate a simpler state string
+      const state = Math.random().toString(36).substring(2, 15);
+      console.log('Generated OAuth state:', state);
+
+      // Clear any existing state and store new state
+      clearState();
+      storeState(state);
+
+      // Double check state was stored correctly
+      const { state: verifyState } = getState();
+      console.log('Verifying stored state before redirect:', {
+        generatedState: state,
+        storedState: verifyState,
+        matches: verifyState === state
+      });
+
+      if (!verifyState || verifyState !== state) {
+        throw new Error('State verification failed before redirect');
       }
 
+      // Construct auth URL
+      const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      authUrl.searchParams.append('client_id', GOOGLE_CLIENT_ID);
+      authUrl.searchParams.append('redirect_uri', YOUTUBE_REDIRECT_URI);
+      authUrl.searchParams.append('response_type', 'code');
+      authUrl.searchParams.append('scope', scopes); // URLSearchParams will handle encoding
+      authUrl.searchParams.append('state', state);
+      authUrl.searchParams.append('access_type', 'offline');
+      authUrl.searchParams.append('prompt', 'consent');
+
+      console.log('Redirecting to auth URL:', authUrl.toString());
+
+      // Redirect to Google OAuth
+      window.location.href = authUrl.toString();
+
+    } catch (error) {
+      handleError(error instanceof Error ? error : 'Failed to initialize authentication');
+    }
+  }, [handleError]);
+
+  const handleCallback = useCallback(async (params: URLSearchParams) => {
+    console.log('Handling callback with params:', Object.fromEntries(params));
+
+    try {
       const code = params.get('code');
+      const incomingState = params.get('state');
+      const error = params.get('error');
+
+      if (error) {
+        throw new Error(`Google OAuth error: ${error}`);
+      }
+
       if (!code) {
-        throw new Error('No authorization code received');
+        throw new Error('Missing authorization code');
+      }
+
+      if (!incomingState) {
+        throw new Error('Missing OAuth state parameter');
+      }
+
+      // Get stored state and validate
+      const { state: storedState } = getState();
+      
+      console.log('Validating OAuth state:', {
+        incomingState,
+        storedState,
+        matches: storedState === incomingState
+      });
+
+      if (!storedState) {
+        throw new Error('No OAuth state found in session');
+      }
+
+      if (storedState !== incomingState) {
+        throw new Error(`OAuth state mismatch. Expected: ${storedState}, Got: ${incomingState}`);
       }
 
       // Exchange code for tokens
+      console.log('Exchanging code for tokens...');
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: {
@@ -95,36 +205,36 @@ export function useGoogleAuth({ onSuccess, onError }: UseGoogleAuthProps) {
         },
         body: new URLSearchParams({
           client_id: GOOGLE_CLIENT_ID,
-          client_secret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET,
+          client_secret: GOOGLE_CLIENT_SECRET,
           code,
           grant_type: 'authorization_code',
-          redirect_uri: REDIRECT_URI,
-        }),
+          redirect_uri: YOUTUBE_REDIRECT_URI,
+        }).toString(),
       });
 
       if (!tokenResponse.ok) {
-        const errorData = await tokenResponse.json().catch(() => ({}));
-        console.error('Token exchange failed:', errorData);
-        throw new Error('Failed to exchange code for tokens');
+        const errorData = await tokenResponse.json().catch(() => null);
+        console.error('Token exchange error:', errorData);
+        throw new Error(
+          `Failed to exchange code for tokens: ${tokenResponse.status} ${tokenResponse.statusText}` +
+          (errorData ? ` - ${JSON.stringify(errorData)}` : '')
+        );
       }
 
-      const tokens = await tokenResponse.json();
-      
-      const response: GoogleAuthResponse = {
-        access_token: tokens.access_token,
-        token_type: 'Bearer',
-        expires_in: tokens.expires_in,
-        scope: tokens.scope,
-      };
+      const data: GoogleAuthResponse = await tokenResponse.json();
+      console.log('Successfully exchanged code for tokens');
 
-      await onSuccess(response);
-    } catch (error) {
-      console.error('Auth callback error:', error);
-      onError?.(error instanceof Error ? error : new Error('Authentication failed'));
-    } finally {
+      // Only clear state after successful token exchange
+      clearState();
+
+      await onSuccess(data);
       setIsAuthenticating(false);
+      return true;
+    } catch (error) {
+      handleError(error instanceof Error ? error : 'Failed to process authentication callback');
+      return false;
     }
-  }, [onSuccess, onError]);
+  }, [onSuccess, handleError]);
 
   return {
     initiateAuth,

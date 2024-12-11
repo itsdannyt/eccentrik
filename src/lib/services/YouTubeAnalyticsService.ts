@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { withRetry } from '../../utils/api.utils';
+import { youtubeConfig } from '../../config/youtube.config';
 
 interface ChannelAnalytics {
   overview: {
@@ -41,14 +42,32 @@ export class YouTubeAnalyticsService {
   private CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   constructor(accessToken: string) {
-    this.oauth2Client = new google.auth.OAuth2(
-      process.env.YOUTUBE_CLIENT_ID,
-      process.env.YOUTUBE_CLIENT_SECRET,
-      process.env.YOUTUBE_REDIRECT_URI
-    );
-    this.oauth2Client.setCredentials({ access_token: accessToken });
-    this.youtube = google.youtube('v3');
-    this.youtubeAnalytics = google.youtubeAnalytics('v2');
+    if (!accessToken) {
+      throw new Error('Access token is required');
+    }
+
+    try {
+      const { clientId, clientSecret, redirectUri } = youtubeConfig;
+      
+      if (!clientId || !clientSecret || !redirectUri) {
+        throw new Error('Missing YouTube API configuration');
+      }
+
+      this.oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+      this.oauth2Client.setCredentials({ access_token: accessToken });
+      
+      this.youtube = google.youtube({
+        version: 'v3',
+        auth: this.oauth2Client
+      });
+      this.youtubeAnalytics = google.youtubeAnalytics({
+        version: 'v2',
+        auth: this.oauth2Client
+      });
+    } catch (error) {
+      console.error('Error initializing YouTube service:', error);
+      throw error;
+    }
   }
 
   private getCacheKey(method: string, params: any): string {
@@ -68,31 +87,115 @@ export class YouTubeAnalyticsService {
   }
 
   async getChannelAnalytics(): Promise<ChannelAnalytics> {
-    const cacheKey = this.getCacheKey('channelAnalytics', {});
-    const cached = this.getFromCache<ChannelAnalytics>(cacheKey);
-    if (cached) return cached;
+    try {
+      // Validate token by making a test API call
+      try {
+        await this.youtube.channels.list({
+          auth: this.oauth2Client,
+          part: ['id'],
+          mine: true
+        });
+      } catch (error: any) {
+        console.error('Token validation error:', error);
+        if (error.code === 401 || (error.response?.status === 401)) {
+          throw new Error('YouTube token expired or invalid');
+        }
+        throw new Error(`Failed to validate YouTube token: ${error.message}`);
+      }
 
-    const data = await withRetry(async () => {
-      const [channelData, performanceData, demographicsData, trafficData] = await Promise.all([
-        this.getChannelOverview(),
-        this.getRecentPerformance(),
-        this.getDemographics(),
-        this.getTrafficSources()
-      ]);
+      // Continue with analytics if token is valid
+      const cacheKey = this.getCacheKey('channelAnalytics', {});
+      const cached = this.getFromCache<ChannelAnalytics>(cacheKey);
+      if (cached) return cached;
 
-      const analytics: ChannelAnalytics = {
-        overview: channelData,
-        recentPerformance: performanceData,
-        demographics: demographicsData,
-        traffic: trafficData,
-        topVideos: await this.getTopVideos()
-      };
+      try {
+        const data = await withRetry(async () => {
+          const [channelData, performanceData, demographicsData, trafficData] = await Promise.all([
+            this.getChannelOverview().catch(err => {
+              console.error('Channel overview error:', err);
+              return {
+                totalViews: '0',
+                subscribers: '0',
+                totalVideos: '0',
+                engagementRate: '0'
+              };
+            }),
+            this.getRecentPerformance().catch(err => {
+              console.error('Recent performance error:', err);
+              return {
+                views: [],
+                watchTime: [],
+                dates: [],
+                averageViewDuration: 0,
+                subscriberChange: 0
+              };
+            }),
+            this.getDemographics().catch(err => {
+              console.error('Demographics error:', err);
+              return { ageGroups: {}, countries: {} };
+            }),
+            this.getTrafficSources().catch(err => {
+              console.error('Traffic sources error:', err);
+              return { sources: {}, devices: {} };
+            })
+          ]);
 
-      this.setCache(cacheKey, analytics);
-      return analytics;
-    });
+          let topVideos = [];
+          try {
+            topVideos = await this.getTopVideos();
+          } catch (err) {
+            console.error('Top videos error:', err);
+            topVideos = []; // Ensure it's an empty array on error
+          }
 
-    return data;
+          const analytics: ChannelAnalytics = {
+            overview: {
+              totalViews: channelData.totalViews || '0',
+              subscribers: channelData.subscribers || '0',
+              totalVideos: channelData.totalVideos || '0',
+              engagementRate: channelData.engagementRate || '0'
+            },
+            recentPerformance: {
+              views: performanceData.views || [],
+              watchTime: performanceData.watchTime || [],
+              dates: performanceData.dates || [],
+              averageViewDuration: performanceData.averageViewDuration || 0,
+              subscriberChange: performanceData.subscriberChange || 0
+            },
+            demographics: {
+              ageGroups: demographicsData.ageGroups || {},
+              countries: demographicsData.countries || {}
+            },
+            traffic: {
+              sources: trafficData.sources || {},
+              devices: trafficData.devices || {}
+            },
+            topVideos: topVideos.map(video => ({
+              id: video?.id || '',
+              title: video?.title || '',
+              views: video?.views || 0,
+              likes: video?.likes || 0,
+              comments: video?.comments || 0
+            }))
+          };
+
+          this.setCache(cacheKey, analytics);
+          return analytics;
+        });
+
+        return data;
+      } catch (error: any) {
+        console.error('Data fetching error:', error);
+        if (error.response?.status === 401) {
+          throw new Error('YouTube authentication failed. Please reconnect your account.');
+        }
+        throw new Error(error.message || 'Failed to fetch YouTube analytics');
+      }
+    } catch (error: any) {
+      console.error('Channel analytics error:', error);
+      // Preserve the original error message if possible
+      throw error instanceof Error ? error : new Error(error.message || 'Failed to fetch channel analytics');
+    }
   }
 
   private async getChannelOverview() {
@@ -102,11 +205,16 @@ export class YouTubeAnalyticsService {
       mine: true
     });
 
-    const stats = response.data.items?.[0]?.statistics;
+    if (!response.data.items?.length) {
+      throw new Error('No channel data found');
+    }
+
+    const stats = response.data.items[0].statistics;
+
     return {
-      totalViews: stats?.viewCount || '0',
-      subscribers: stats?.subscriberCount || '0',
-      totalVideos: stats?.videoCount || '0',
+      totalViews: stats.viewCount || '0',
+      subscribers: stats.subscriberCount || '0',
+      totalVideos: stats.videoCount || '0',
       engagementRate: this.calculateEngagementRate(stats)
     };
   }

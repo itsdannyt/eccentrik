@@ -4,11 +4,13 @@ export interface SignUpData {
   email: string;
   password: string;
   fullName: string;
-  metadata?: {
-    youtubeChannel?: string;
-    channelId?: string;
-    channelTitle?: string;
-    channelStats?: {
+  youtubeData?: {
+    channelId: string;
+    channelTitle: string;
+    channelUrl: string;
+    accessToken: string;
+    refreshToken?: string;
+    statistics?: {
       viewCount: string;
       subscriberCount: string;
       videoCount: string;
@@ -21,7 +23,7 @@ export interface SignInData {
   password: string;
 }
 
-export async function signUp({ email, password, fullName, metadata }: SignUpData) {
+export async function signUp({ email, password, fullName, youtubeData }: SignUpData) {
   try {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -29,10 +31,12 @@ export async function signUp({ email, password, fullName, metadata }: SignUpData
       options: {
         data: {
           full_name: fullName,
-          youtube_channel: metadata?.youtubeChannel,
-          channel_id: metadata?.channelId,
-          channel_title: metadata?.channelTitle,
-          channel_stats: metadata?.channelStats,
+          youtube_channel: youtubeData?.channelUrl,
+          channel_id: youtubeData?.channelId,
+          channel_title: youtubeData?.channelTitle,
+          channel_stats: youtubeData?.statistics,
+          youtube_token: youtubeData?.accessToken,
+          youtube_refresh_token: youtubeData?.refreshToken
         },
       },
     });
@@ -44,6 +48,26 @@ export async function signUp({ email, password, fullName, metadata }: SignUpData
 
     // When email confirmation is required, data.user will exist but data.session will be null
     if (data?.user) {
+      // Store YouTube tokens if available
+      if (youtubeData?.accessToken) {
+        const { error: tokenError } = await supabase
+          .from('user_youtube_tokens')
+          .upsert({
+            user_id: data.user.id,
+            access_token: youtubeData.accessToken,
+            refresh_token: youtubeData.refreshToken,
+            token_type: 'Bearer',
+            expires_in: 3600, // Default to 1 hour
+            scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/youtube',
+            created_at: new Date().toISOString(),
+          });
+
+        if (tokenError) {
+          console.error('Failed to store YouTube tokens:', tokenError);
+          throw tokenError;
+        }
+      }
+
       return {
         data,
         confirmEmail: !data.user.confirmed_at,

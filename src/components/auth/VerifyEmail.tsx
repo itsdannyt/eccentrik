@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { YouTubeOAuth } from '../../lib/api/youtube/oauth';
-import { supabase } from '../../lib/supabase';
+import { useSupabase } from '../../lib/hooks/useSupabase';
 
 export function VerifyEmail() {
   const navigate = useNavigate();
   const [isVerified, setIsVerified] = useState(false);
+  const { supabase } = useSupabase();
 
   useEffect(() => {
     const checkEmailVerification = async () => {
@@ -20,8 +21,8 @@ export function VerifyEmail() {
         if (channelData) {
           localStorage.removeItem('pendingYouTubeChannel');
           
-          // Initialize YouTube OAuth
-          const youtubeOAuth = new YouTubeOAuth();
+          // Initialize YouTube OAuth with Supabase client
+          const youtubeOAuth = new YouTubeOAuth(supabase);
           const authUrl = youtubeOAuth.getAuthUrl();
           
           // Redirect to YouTube OAuth
@@ -34,7 +35,7 @@ export function VerifyEmail() {
 
     const interval = setInterval(checkEmailVerification, 2000);
     return () => clearInterval(interval);
-  }, [navigate]);
+  }, [navigate, supabase]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">

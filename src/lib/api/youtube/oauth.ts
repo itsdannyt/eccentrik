@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabaseClient';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/youtube.readonly',
@@ -13,11 +13,13 @@ export class YouTubeOAuth {
   private clientId: string;
   private clientSecret: string;
   private redirectUri: string;
+  private supabase: SupabaseClient;
 
-  constructor() {
+  constructor(supabaseClient: SupabaseClient) {
     this.clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     this.clientSecret = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
     this.redirectUri = `${window.location.origin}/auth/callback`;
+    this.supabase = supabaseClient;
   }
 
   public getAuthUrl(): string {
@@ -50,26 +52,52 @@ export class YouTubeOAuth {
       });
 
       if (!tokenResponse.ok) {
+        const error = await tokenResponse.json();
+        console.error('Token exchange failed:', error);
         throw new Error('Failed to exchange code for tokens');
       }
 
       const tokens = await tokenResponse.json();
-      
+
+      // Get current user
+      const { data: { user }, error: userError } = await this.supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('No authenticated user found');
+      }
+
       // Store tokens in Supabase
-      const { error } = await supabase
-        .from('user_tokens')
+      const { error: updateError } = await this.supabase
+        .from('user_youtube_tokens')
         .upsert({
-          user_id: (await supabase.auth.getUser()).data.user?.id,
+          user_id: user.id,
           access_token: tokens.access_token,
           refresh_token: tokens.refresh_token,
-          expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+          token_type: tokens.token_type,
+          expires_in: tokens.expires_in,
+          scope: tokens.scope,
+          created_at: new Date().toISOString(),
         });
 
-      if (error) {
-        throw error;
+      if (updateError) {
+        console.error('Failed to store tokens:', updateError);
+        throw updateError;
       }
+
+      // Update user metadata
+      const { error: metadataError } = await this.supabase.auth.updateUser({
+        data: {
+          youtube_connected: true,
+          youtube_connected_at: new Date().toISOString()
+        }
+      });
+
+      if (metadataError) {
+        console.error('Failed to update user metadata:', metadataError);
+        throw metadataError;
+      }
+
     } catch (error) {
-      console.error('OAuth callback error:', error);
+      console.error('YouTube OAuth callback failed:', error);
       throw error;
     }
   }
@@ -96,13 +124,13 @@ export class YouTubeOAuth {
       const tokens = await response.json();
       
       // Update token in Supabase
-      const { error } = await supabase
-        .from('user_tokens')
+      const { error } = await this.supabase
+        .from('user_youtube_tokens')
         .update({
           access_token: tokens.access_token,
-          expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+          expires_in: tokens.expires_in,
         })
-        .match({ user_id: (await supabase.auth.getUser()).data.user?.id });
+        .match({ user_id: (await this.supabase.auth.getUser()).data.user?.id });
 
       if (error) {
         throw error;

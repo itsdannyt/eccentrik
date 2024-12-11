@@ -60,42 +60,57 @@ export function useYouTubeData() {
         const response = await fetch('http://localhost:5174/api/youtube/analytics', {
           headers: {
             'Authorization': `Bearer ${youtubeToken}`,
+            'Content-Type': 'application/json'
           },
         });
 
         if (!response.ok) {
-          throw new Error('Failed to fetch YouTube data');
+          const errorText = await response.text();
+          console.error('API Error Response:', errorText);
+          throw new Error(`Failed to fetch YouTube data: ${response.status} ${response.statusText}`);
         }
 
-        const data = await response.json();
-        
-        // Format the stats data
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('JSON Parse Error:', parseError);
+          throw new Error('Invalid response format from YouTube API');
+        }
+
+        // Validate data structure
+        if (!data?.overview) {
+          console.error('Invalid data structure:', data);
+          throw new Error('Invalid data structure from YouTube API');
+        }
+
+        // Format the stats data with fallbacks
         setStats({
-          totalViews: formatNumber(data.overview.totalViews),
-          subscribers: formatNumber(data.overview.subscribers),
-          totalVideos: formatNumber(data.overview.totalVideos),
-          watchTime: formatWatchTime(data.overview.watchTime),
-          engagementRate: data.overview.engagementRate + '%'
+          totalViews: formatNumber(data.overview.totalViews || '0'),
+          subscribers: formatNumber(data.overview.subscribers || '0'),
+          totalVideos: formatNumber(data.overview.totalVideos || '0'),
+          watchTime: formatWatchTime(data.overview.watchTime || '0'),
+          engagementRate: (data.overview.engagementRate || '0') + '%'
         });
 
-        // Set recent videos if available
-        if (data.recentVideos) {
+        // Set recent videos if available with validation
+        if (Array.isArray(data.recentVideos)) {
           setRecentVideos(data.recentVideos.map((video: any) => ({
-            id: video.id,
-            title: video.title,
-            thumbnail: video.thumbnail,
-            publishedAt: video.publishedAt,
+            id: video.id || '',
+            title: video.title || '',
+            thumbnail: video.thumbnail || '',
+            publishedAt: video.publishedAt || '',
             stats: {
-              views: formatNumber(video.stats.views),
-              likes: formatNumber(video.stats.likes),
-              comments: formatNumber(video.stats.comments)
+              views: formatNumber(video.stats?.views || '0'),
+              likes: formatNumber(video.stats?.likes || '0'),
+              comments: formatNumber(video.stats?.comments || '0')
             },
             analytics: {
-              watchTime: formatWatchTime(video.analytics.watchTime),
-              avgViewDuration: video.analytics.avgViewDuration,
-              engagementRate: video.analytics.engagementRate + '%'
+              watchTime: formatWatchTime(video.analytics?.watchTime || '0'),
+              avgViewDuration: video.analytics?.avgViewDuration || '0:00',
+              engagementRate: (video.analytics?.engagementRate || '0') + '%'
             },
-            insights: video.insights || []
+            insights: Array.isArray(video.insights) ? video.insights : []
           })));
         }
       } catch (err) {
@@ -111,12 +126,12 @@ export function useYouTubeData() {
     fetchYouTubeData();
   }, [youtubeToken]);
 
-  const formattedStats: FormattedStats = stats ? {
-    subscribers: formatNumber(stats.subscribers),
-    views: formatNumber(stats.totalViews),
-    videos: formatNumber(stats.totalVideos),
-    watchTime: formatWatchTime(stats.watchTime),
-    engagement: stats.engagementRate
+  const formattedStats: FormattedStats | null = stats ? {
+    subscribers: formatNumber(stats.subscribers || '0'),
+    views: formatNumber(stats.totalViews || '0'),
+    videos: formatNumber(stats.totalVideos || '0'),
+    watchTime: formatWatchTime(stats.watchTime || '0'),
+    engagement: stats.engagementRate || '0%'
   } : null;
 
   return { stats: formattedStats, recentVideos, loading, error };

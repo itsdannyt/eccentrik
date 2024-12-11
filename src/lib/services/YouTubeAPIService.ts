@@ -1,4 +1,4 @@
-import { supabase } from '../supabase';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 interface CachedData {
   data: any;
@@ -17,15 +17,17 @@ export class YouTubeAPIService {
   private readonly TTL = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
   private readonly RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute in milliseconds
   private readonly MAX_REQUESTS_PER_WINDOW = 5;
+  private supabase: SupabaseClient;
 
-  private constructor() {
+  constructor(supabaseClient: SupabaseClient) {
     this.cache = new Map();
     this.rateLimits = new Map();
+    this.supabase = supabaseClient;
   }
 
-  public static getInstance(): YouTubeAPIService {
+  static getInstance(supabaseClient: SupabaseClient): YouTubeAPIService {
     if (!YouTubeAPIService.instance) {
-      YouTubeAPIService.instance = new YouTubeAPIService();
+      YouTubeAPIService.instance = new YouTubeAPIService(supabaseClient);
     }
     return YouTubeAPIService.instance;
   }
@@ -38,7 +40,7 @@ export class YouTubeAPIService {
     }
 
     // Then check Supabase cache
-    const { data: cacheEntry } = await supabase
+    const { data: cacheEntry } = await this.supabase
       .from('api_cache')
       .select('data, timestamp')
       .eq('key', key)
@@ -64,7 +66,7 @@ export class YouTubeAPIService {
     });
 
     // Update Supabase cache
-    await supabase
+    await this.supabase
       .from('api_cache')
       .upsert({
         key,
@@ -93,7 +95,7 @@ export class YouTubeAPIService {
   }
 
   private async logAPIUsage(userId: string, endpoint: string): Promise<void> {
-    await supabase
+    await this.supabase
       .from('api_usage_logs')
       .insert({
         user_id: userId,
@@ -170,5 +172,36 @@ export class YouTubeAPIService {
       console.error('Error batch fetching videos:', error);
       throw error;
     }
+  }
+
+  async getYouTubeToken(userId: string): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .from('user_youtube_tokens')
+      .select('access_token')
+      .eq('user_id', userId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching YouTube token:', error);
+      return null;
+    }
+
+    return data?.access_token || null;
+  }
+
+  async fetchChannelAnalytics(userId: string) {
+    const token = await this.getYouTubeToken(userId);
+    if (!token) {
+      throw new Error('No YouTube token found');
+    }
+
+    // Add your YouTube API calls here
+    // Example:
+    // const response = await fetch('https://www.googleapis.com/youtube/v3/...', {
+    //   headers: {
+    //     Authorization: `Bearer ${token}`
+    //   }
+    // });
+    // return response.json();
   }
 }

@@ -32,18 +32,30 @@ export function SignUpPage() {
 
   const handleStep1 = (data: SignUpStep1Data) => {
     setFormData(data);
+    // Store form data and set signup flow flag in sessionStorage
+    sessionStorage.setItem('signUpData', JSON.stringify(data));
+    sessionStorage.setItem('isSignUpFlow', 'true');
     setStep(2);
   };
 
-  const handleStep2 = async (credentials: { accessToken: string; channelId: string }) => {
-    if (!formData) return;
+  const handleStep2 = async (credentials: { accessToken: string; channelId: string; refreshToken?: string }) => {
+    if (!formData) {
+      // Try to get form data from sessionStorage if not in state
+      const storedData = sessionStorage.getItem('signUpData');
+      if (!storedData) {
+        toast.error('Signup data not found. Please start over.');
+        setStep(1);
+        return;
+      }
+      setFormData(JSON.parse(storedData));
+    }
     
     setIsLoading(true);
     try {
       // Start validation
       updateLoadingStep('validation', 'loading');
       // Validate the access token by making a test API call
-      const channelResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${credentials.channelId}`, {
+      const channelResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${credentials.channelId}`, {
         headers: {
           'Authorization': `Bearer ${credentials.accessToken}`
         }
@@ -52,6 +64,13 @@ export function SignUpPage() {
       if (!channelResponse.ok) {
         throw new Error('Failed to validate YouTube channel');
       }
+
+      const channelData = await channelResponse.json();
+      if (!channelData.items?.[0]) {
+        throw new Error('No YouTube channel found');
+      }
+
+      const channel = channelData.items[0];
       updateLoadingStep('validation', 'complete');
 
       // Start account creation
@@ -60,7 +79,15 @@ export function SignUpPage() {
         ...formData,
         youtubeData: {
           channelId: credentials.channelId,
-          accessToken: credentials.accessToken
+          channelTitle: channel.snippet.title,
+          channelUrl: `https://youtube.com/channel/${credentials.channelId}`,
+          accessToken: credentials.accessToken,
+          refreshToken: credentials.refreshToken,
+          statistics: {
+            subscriberCount: channel.statistics.subscriberCount,
+            videoCount: channel.statistics.videoCount,
+            viewCount: channel.statistics.viewCount
+          }
         }
       });
       updateLoadingStep('account', 'complete');
@@ -69,6 +96,10 @@ export function SignUpPage() {
       updateLoadingStep('analytics', 'loading');
       // The backend will handle storing the YouTube credentials and setting up initial analytics
       updateLoadingStep('analytics', 'complete');
+
+      // Clear signup data from sessionStorage
+      sessionStorage.removeItem('signUpData');
+      sessionStorage.removeItem('isSignUpFlow');
 
       if (confirmEmail) {
         navigate('/auth/verify-email');

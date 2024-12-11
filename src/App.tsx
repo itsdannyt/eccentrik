@@ -24,8 +24,9 @@ import { PoliciesPage } from './pages/dashboard/PoliciesPage';
 import { SupportPage } from './pages/dashboard/SupportPage';
 import { PredictiveInsightsPage } from './pages/dashboard/PredictiveInsightsPage';
 import { TrendPulsePage } from './pages/dashboard/TrendPulsePage';
-import AuthCallback from './components/auth/AuthCallback';
+import { AuthCallback } from './components/auth/AuthCallback';
 import { VerifyEmail } from './components/auth/VerifyEmail';
+import { ErrorPage } from './pages/ErrorPage';
 
 function HomePage() {
   return (
@@ -88,6 +89,7 @@ function App() {
               <Route path="policies" element={<PoliciesPage />} />
               <Route path="support" element={<SupportPage />} />
             </Route>
+            <Route path="/error" element={<ErrorPage />} />
           </Routes>
         </Layout>
       </AuthProvider>
