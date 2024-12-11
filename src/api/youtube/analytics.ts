@@ -70,76 +70,44 @@ router.options('/analytics', (req, res) => {
 // Main analytics endpoint
 router.get('/analytics', asyncHandler(async (req, res) => {
   console.log('\n=== YouTube Analytics Request ===');
-  console.log('Headers:', req.headers);
   
   // Check authorization header
   const authorization = req.headers.authorization;
   if (!authorization) {
-    console.error('No authorization header provided');
     return res.status(401).json({ 
-      error: 'Authentication Error',
-      message: 'No authorization token provided' 
+      error: {
+        message: 'No authorization token provided',
+        status: 401
+      }
     });
   }
 
   // Extract and validate access token
   const accessToken = authorization.replace(/^Bearer\s+/i, '');
   if (!accessToken) {
-    console.error('Invalid authorization format');
     return res.status(401).json({ 
-      error: 'Authentication Error',
-      message: 'Invalid authorization format' 
+      error: {
+        message: 'Invalid authorization format',
+        status: 401
+      }
     });
   }
 
-  console.log('Access token received:', accessToken.substring(0, 10) + '...');
-  
   try {
-    console.log('Creating YouTubeAnalyticsService...');
     const analyticsService = new YouTubeAnalyticsService(accessToken);
-    
-    console.log('Initializing service...');
-    await analyticsService.initialize();
-    
-    console.log('Fetching analytics data...');
     const data = await analyticsService.getChannelAnalytics();
     
-    console.log('Analytics data fetched successfully:', {
-      hasOverview: !!data.overview,
-      hasPerformance: !!data.recentPerformance,
-      topVideosCount: data.topVideos?.length,
-      hasDemographics: !!data.demographics,
-      hasTraffic: !!data.traffic
+    // Send properly formatted JSON response
+    res.json({
+      totalViews: data.overview.totalViews,
+      subscribers: data.overview.subscribers,
+      totalVideos: data.overview.totalVideos,
+      watchTime: data.recentPerformance?.watchTime?.[0] || '0',
+      engagementRate: data.overview.engagementRate
     });
-    
-    res.json(data);
   } catch (error: any) {
-    console.error('Analytics endpoint error:', {
-      message: error.message,
-      stack: error.stack,
-      response: error.response?.data
-    });
-    
-    // Handle specific error types
-    if (error.message.includes('token expired')) {
-      return res.status(401).json({
-        error: 'Authentication Error',
-        message: 'YouTube token has expired. Please reconnect your account.'
-      });
-    }
-    
-    if (error.message.includes('No channel data found')) {
-      return res.status(404).json({
-        error: 'Channel Error',
-        message: 'No YouTube channel found for this account.'
-      });
-    }
-    
-    // Generic error response
-    res.status(500).json({
-      error: 'Analytics Error',
-      message: error.message || 'Failed to fetch YouTube analytics'
-    });
+    console.error('Analytics Error:', error);
+    throw new Error(error.message || 'Failed to fetch YouTube analytics');
   }
 }));
 
