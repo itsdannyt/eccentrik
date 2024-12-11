@@ -18,10 +18,28 @@ export class YouTubeClient {
   }
 
   private getHeaders() {
+    // Check if the token already includes 'Bearer'
+    const token = this.accessToken?.startsWith('Bearer ') 
+      ? this.accessToken 
+      : `Bearer ${this.accessToken}`;
+      
     return {
-      'Authorization': `Bearer ${this.accessToken}`,
+      'Authorization': token,
       'Content-Type': 'application/json'
     };
+  }
+
+  private async handleRequest<T>(request: () => Promise<T>): Promise<T> {
+    try {
+      return await request();
+    } catch (error: any) {
+      if (error?.response?.status === 401) {
+        // Token might be expired, clear it
+        this.accessToken = null;
+        throw new Error('YouTube token expired. Please reconnect your YouTube account.');
+      }
+      throw error;
+    }
   }
 
   public async getChannelAnalytics() {
@@ -31,10 +49,12 @@ export class YouTubeClient {
       }
 
       console.log('Fetching channel analytics with token:', this.accessToken.substring(0, 10) + '...');
-      const response = await axios.get('/api/youtube/analytics', {
-        headers: this.getHeaders()
+      return await this.handleRequest(async () => {
+        const response = await axios.get('/api/youtube/analytics', {
+          headers: this.getHeaders()
+        });
+        return response.data;
       });
-      return response.data;
     } catch (error) {
       console.error('Error fetching channel analytics:', error);
       throw error;
@@ -48,10 +68,12 @@ export class YouTubeClient {
       }
 
       console.log('Fetching recent videos with token:', this.accessToken.substring(0, 10) + '...');
-      const response = await axios.get('/api/youtube/videos', {
-        headers: this.getHeaders()
+      return await this.handleRequest(async () => {
+        const response = await axios.get('/api/youtube/videos', {
+          headers: this.getHeaders()
+        });
+        return response.data;
       });
-      return response.data;
     } catch (error) {
       console.error('Error fetching recent videos:', error);
       throw error;

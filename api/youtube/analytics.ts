@@ -53,31 +53,32 @@ async function handler(
     }
 
     console.log('Authorization header present');
-    const accessToken = authorization.replace('Bearer ', '');
+    // Extract token, handling both "Bearer" prefix and raw token cases
+    const accessToken = authorization.replace(/^Bearer\s+/i, '');
     
     console.log('Creating OAuth2 client...');
-    const oauth2Client = new google.auth.OAuth2({
-      clientId: process.env.VITE_YOUTUBE_CLIENT_ID,
-      clientSecret: process.env.VITE_YOUTUBE_CLIENT_SECRET,
-      redirectUri: process.env.VITE_YOUTUBE_REDIRECT_URI
-    });
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.VITE_YOUTUBE_CLIENT_ID,
+      process.env.VITE_YOUTUBE_CLIENT_SECRET,
+      process.env.VITE_YOUTUBE_REDIRECT_URI
+    );
 
     console.log('Setting credentials...');
     oauth2Client.setCredentials({
       access_token: accessToken,
-      scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly'
+      token_type: 'Bearer'
     });
 
-    // Verify token
+    // Verify token validity
     try {
       console.log('Verifying token...');
-      const tokenInfo = await oauth2Client.getTokenInfo(accessToken);
-      console.log('Token info:', tokenInfo);
+      await oauth2Client.getTokenInfo(accessToken);
     } catch (tokenError) {
       console.error('Token verification failed:', tokenError);
       res.status(401).json({ 
         error: 'Invalid or expired token',
-        message: 'Please sign in again to refresh your YouTube access.'
+        message: 'Please reconnect your YouTube account.',
+        details: tokenError instanceof Error ? tokenError.message : 'Unknown error'
       });
       return;
     }
@@ -87,64 +88,70 @@ async function handler(
     const youtubeAnalytics = google.youtubeAnalytics('v2');
 
     console.log('Fetching channel ID...');
-    const channelResponse = await youtube.channels.list({
-      auth: oauth2Client,
-      part: ['id', 'statistics'],
-      mine: true
-    });
+    try {
+      const channelResponse = await youtube.channels.list({
+        auth: oauth2Client,
+        part: ['id', 'statistics'],
+        mine: true
+      });
 
-    console.log('Channel response:', channelResponse.data);
+      console.log('Channel response:', channelResponse.data);
 
-    const channelId = channelResponse.data.items?.[0]?.id;
-    if (!channelId) {
-      throw new Error('Channel ID not found');
+      const channelId = channelResponse.data.items?.[0]?.id;
+      if (!channelId) {
+        throw new Error('Channel ID not found');
+      }
+      
+      console.log('Found channel ID:', channelId);
+      
+      // Get basic channel statistics
+      const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
+      console.log('Channel statistics:', stats);
+
+      console.log('Fetching analytics data...');
+      // Get analytics data
+      const analyticsResponse = await youtubeAnalytics.reports.query({
+        auth: oauth2Client,
+        dimensions: 'video',
+        metrics: 'estimatedMinutesWatched,views,likes,comments',
+        ids: `channel==${channelId}`,
+        startDate: '2020-01-01',
+        endDate: new Date().toISOString().split('T')[0],
+        sort: '-estimatedMinutesWatched'
+      }) as GaxiosResponse<youtubeAnalytics_v2.Schema$QueryResponse>;
+
+      console.log('Analytics response:', analyticsResponse.data);
+
+      const response: AnalyticsResponse = {
+        overview: {
+          totalViews: stats?.viewCount || '0',
+          subscribers: stats?.subscriberCount || '0',
+          totalVideos: stats?.videoCount || '0',
+          watchTime: (analyticsResponse.data?.rows?.[0]?.[1] || 0).toString(),
+          engagementRate: calculateEngagementRate(stats)
+        },
+        analyticsData: analyticsResponse.data
+      };
+
+      console.log('Sending response:', response);
+      res.status(200).json(response);
+    } catch (apiError: any) {
+      console.error('YouTube API Error:', apiError);
+      
+      // Check if it's an auth error
+      if (apiError.response?.status === 401 || apiError.code === 401) {
+        res.status(401).json({
+          error: 'YouTube authentication failed',
+          message: 'Please sign out and sign in again to refresh your YouTube access.',
+          details: apiError.message
+        });
+        return;
+      }
+      
+      throw apiError; // Re-throw for general error handling
     }
-    
-    console.log('Found channel ID:', channelId);
-    
-    // Get basic channel statistics
-    const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
-    console.log('Channel statistics:', stats);
-
-    console.log('Fetching analytics data...');
-    // Get analytics data
-    const analyticsResponse = await youtubeAnalytics.reports.query({
-      auth: oauth2Client,
-      dimensions: 'video',
-      metrics: 'estimatedMinutesWatched,views,likes,comments',
-      ids: `channel==${channelId}`,
-      startDate: '2020-01-01',
-      endDate: new Date().toISOString().split('T')[0],
-      sort: '-estimatedMinutesWatched'
-    }) as GaxiosResponse<youtubeAnalytics_v2.Schema$QueryResponse>;
-
-    console.log('Analytics response:', analyticsResponse.data);
-
-    const response: AnalyticsResponse = {
-      overview: {
-        totalViews: stats?.viewCount || '0',
-        subscribers: stats?.subscriberCount || '0',
-        totalVideos: stats?.videoCount || '0',
-        watchTime: (analyticsResponse.data?.rows?.[0]?.[1] || 0).toString(),
-        engagementRate: calculateEngagementRate(stats)
-      },
-      analyticsData: analyticsResponse.data
-    };
-
-    console.log('Sending response:', response);
-    res.status(200).json(response);
   } catch (error) {
     console.error('Error in YouTube analytics endpoint:', error);
-    
-    // Check if it's an auth error
-    if (error.response?.status === 401 || error.code === 401) {
-      res.status(401).json({
-        error: 'Authentication failed',
-        message: 'Please sign in again to refresh your YouTube access.',
-        details: error.message
-      });
-      return;
-    }
     
     // Send more detailed error information
     res.status(500).json({
