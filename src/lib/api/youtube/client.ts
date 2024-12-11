@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { useAuth } from '../../auth/AuthProvider';
 
 export class YouTubeClient {
   private static instance: YouTubeClient | null = null;
@@ -14,17 +15,21 @@ export class YouTubeClient {
   }
 
   public setAccessToken(token: string) {
+    if (!token) {
+      throw new Error('Invalid token provided');
+    }
     this.accessToken = token;
   }
 
   private getHeaders() {
-    // Check if the token already includes 'Bearer'
-    const token = this.accessToken?.startsWith('Bearer ') 
-      ? this.accessToken 
-      : `Bearer ${this.accessToken}`;
-      
+    if (!this.accessToken) {
+      throw new Error('Access token not set');
+    }
+    
+    // Remove any existing Bearer prefix and add it cleanly
+    const token = this.accessToken.replace(/^Bearer\s+/i, '');
     return {
-      'Authorization': token,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     };
   }
@@ -34,7 +39,7 @@ export class YouTubeClient {
       return await request();
     } catch (error: any) {
       if (error?.response?.status === 401) {
-        // Token might be expired, clear it
+        // Clear the token on auth errors
         this.accessToken = null;
         throw new Error('YouTube token expired. Please reconnect your YouTube account.');
       }
@@ -48,7 +53,6 @@ export class YouTubeClient {
         throw new Error('Access token not set. Please authenticate first.');
       }
 
-      console.log('Fetching channel analytics with token:', this.accessToken.substring(0, 10) + '...');
       return await this.handleRequest(async () => {
         const response = await axios.get('/api/youtube/analytics', {
           headers: this.getHeaders()
@@ -67,7 +71,6 @@ export class YouTubeClient {
         throw new Error('Access token not set. Please authenticate first.');
       }
 
-      console.log('Fetching recent videos with token:', this.accessToken.substring(0, 10) + '...');
       return await this.handleRequest(async () => {
         const response = await axios.get('/api/youtube/videos', {
           headers: this.getHeaders()

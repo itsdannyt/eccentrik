@@ -29,7 +29,7 @@ function calculateEngagementRate(stats: ChannelStats): string {
   return ((interactions / views) * 100).toFixed(2);
 }
 
-async function handler(
+export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ): Promise<void> {
@@ -39,76 +39,44 @@ async function handler(
   }
 
   try {
-    // Log environment variables (without sensitive values)
-    console.log('Environment check:', {
-      hasClientId: !!process.env.VITE_YOUTUBE_CLIENT_ID,
-      hasClientSecret: !!process.env.VITE_YOUTUBE_CLIENT_SECRET,
-      hasRedirectUri: !!process.env.VITE_YOUTUBE_REDIRECT_URI
-    });
-
     const { authorization } = req.headers;
     if (!authorization) {
       res.status(401).json({ error: 'No authorization token provided' });
       return;
     }
 
-    console.log('Authorization header present');
     // Extract token, handling both "Bearer" prefix and raw token cases
     const accessToken = authorization.replace(/^Bearer\s+/i, '');
     
-    console.log('Creating OAuth2 client...');
     const oauth2Client = new google.auth.OAuth2(
       process.env.VITE_YOUTUBE_CLIENT_ID,
       process.env.VITE_YOUTUBE_CLIENT_SECRET,
       process.env.VITE_YOUTUBE_REDIRECT_URI
     );
 
-    console.log('Setting credentials...');
     oauth2Client.setCredentials({
-      access_token: accessToken,
-      token_type: 'Bearer'
+      access_token: accessToken
     });
 
-    // Verify token validity
-    try {
-      console.log('Verifying token...');
-      await oauth2Client.getTokenInfo(accessToken);
-    } catch (tokenError) {
-      console.error('Token verification failed:', tokenError);
-      res.status(401).json({ 
-        error: 'Invalid or expired token',
-        message: 'Please reconnect your YouTube account.',
-        details: tokenError instanceof Error ? tokenError.message : 'Unknown error'
-      });
-      return;
-    }
-
-    console.log('Initializing YouTube API clients...');
     const youtube = google.youtube('v3');
     const youtubeAnalytics = google.youtubeAnalytics('v2');
 
-    console.log('Fetching channel ID...');
     try {
+      // Try to get channel info first
       const channelResponse = await youtube.channels.list({
         auth: oauth2Client,
         part: ['id', 'statistics'],
         mine: true
       });
 
-      console.log('Channel response:', channelResponse.data);
-
       const channelId = channelResponse.data.items?.[0]?.id;
       if (!channelId) {
         throw new Error('Channel ID not found');
       }
       
-      console.log('Found channel ID:', channelId);
-      
       // Get basic channel statistics
       const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
-      console.log('Channel statistics:', stats);
 
-      console.log('Fetching analytics data...');
       // Get analytics data
       const analyticsResponse = await youtubeAnalytics.reports.query({
         auth: oauth2Client,
@@ -119,8 +87,6 @@ async function handler(
         endDate: new Date().toISOString().split('T')[0],
         sort: '-estimatedMinutesWatched'
       }) as GaxiosResponse<youtubeAnalytics_v2.Schema$QueryResponse>;
-
-      console.log('Analytics response:', analyticsResponse.data);
 
       const response: AnalyticsResponse = {
         overview: {
@@ -133,7 +99,6 @@ async function handler(
         analyticsData: analyticsResponse.data
       };
 
-      console.log('Sending response:', response);
       res.status(200).json(response);
     } catch (apiError: any) {
       console.error('YouTube API Error:', apiError);
@@ -142,24 +107,19 @@ async function handler(
       if (apiError.response?.status === 401 || apiError.code === 401) {
         res.status(401).json({
           error: 'YouTube authentication failed',
-          message: 'Please sign out and sign in again to refresh your YouTube access.',
+          message: 'Please reconnect your YouTube account.',
           details: apiError.message
         });
         return;
       }
       
-      throw apiError; // Re-throw for general error handling
+      throw apiError;
     }
   } catch (error) {
     console.error('Error in YouTube analytics endpoint:', error);
-    
-    // Send more detailed error information
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-      name: error instanceof Error ? error.name : undefined
+      details: error instanceof Error ? error.stack : undefined
     });
   }
 }
-
-export { handler as default };
