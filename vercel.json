@@ -12,7 +12,7 @@
   ],
   "functions": {
     "api/youtube/*.ts": {
-      "runtime": "@vercel/node@18.x"
+      "runtime": "vercel-node@1.15.4"
     }
   }
 }
