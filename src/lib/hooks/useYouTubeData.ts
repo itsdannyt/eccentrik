@@ -49,110 +49,50 @@ export function useYouTubeData() {
     let isMounted = true;
     let retryTimeout: NodeJS.Timeout;
     let retryCount = 0;
-    const MAX_RETRIES = 3;
-    const RETRY_DELAY = 2000; // 2 seconds
 
-    async function fetchYouTubeData() {
+    const fetchData = async () => {
       if (!youtubeToken) {
-        console.log('[useYouTubeData] No YouTube token available');
-        setStats(null);
-        setRecentVideos([]);
-        setLoading(false);
+        setError('No YouTube token available');
         return;
       }
 
-      if (!isMounted) return;
-      setLoading(true);
-      setError(null);
-
       try {
-        console.log('[useYouTubeData] Making API request with token:', youtubeToken.substring(0, 10) + '...');
-        const response = await fetch('/api/youtube/analytics', {
-          method: 'GET',
+        setLoading(true);
+        setError(null);
+
+        const response = await fetch('http://localhost:5174/api/youtube/analytics', {
           headers: {
             'Authorization': `Bearer ${youtubeToken}`,
-            'Content-Type': 'application/json'
+            'Accept': 'application/json'
           }
         });
 
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error('[useYouTubeData] API Error Response:', {
-            status: response.status,
-            statusText: response.statusText,
-            error: errorText
-          });
-          throw new Error(`Failed to fetch YouTube data: ${response.status} ${response.statusText}`);
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const data = await response.json();
-        console.log('[useYouTubeData] Raw API response:', data);
-
-        if (!data?.overview) {
-          console.error('[useYouTubeData] Invalid data structure:', data);
-          throw new Error('Invalid data structure received from YouTube API');
-        }
-
-        if (!isMounted) return;
         
-        // Set stats with actual data, no placeholders
-        const newStats: YouTubeStats = {
-          totalViews: data.overview.totalViews,
-          subscribers: data.overview.subscribers,
-          totalVideos: data.overview.totalVideos,
-          watchTime: data.overview.watchTime,
-          engagementRate: data.overview.engagementRate
-        };
-        console.log('[useYouTubeData] Formatted stats:', newStats);
-        setStats(newStats);
-
-        // Set recent videos if available
-        if (Array.isArray(data.recentVideos)) {
-          const newRecentVideos = data.recentVideos.map((video: any) => ({
-            id: video.id,
-            title: video.title,
-            thumbnail: video.thumbnail,
-            publishedAt: video.publishedAt,
-            stats: {
-              views: formatNumber(video.stats?.views),
-              likes: formatNumber(video.stats?.likes),
-              comments: formatNumber(video.stats?.comments)
-            },
-            analytics: {
-              watchTime: formatWatchTime(video.analytics?.watchTime),
-              avgViewDuration: video.analytics?.avgViewDuration,
-              engagementRate: video.analytics?.engagementRate ? `${video.analytics.engagementRate}%` : null
-            },
-            insights: Array.isArray(video.insights) ? video.insights : []
-          }));
-          console.log('[useYouTubeData] Formatted recent videos:', newRecentVideos);
-          setRecentVideos(newRecentVideos);
-        }
-
-        setLoading(false);
-      } catch (err) {
-        console.error('[useYouTubeData] Error fetching YouTube data:', err);
-        if (!isMounted) return;
-        
-        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch YouTube data';
-        setError(errorMessage);
-        setStats(null);
-        setRecentVideos([]);
-
-        // Retry logic for connection errors
-        if (errorMessage.includes('Failed to connect to server') && retryCount < MAX_RETRIES) {
-          retryCount++;
-          console.log(`[useYouTubeData] Retrying in ${RETRY_DELAY}ms... (Attempt ${retryCount}/${MAX_RETRIES})`);
-          retryTimeout = setTimeout(fetchYouTubeData, RETRY_DELAY);
-        }
-      } finally {
         if (isMounted) {
+          setStats(data);
           setLoading(false);
         }
-      }
-    }
+      } catch (err) {
+        console.error('Error fetching YouTube data:', err);
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : 'Failed to fetch YouTube data');
+          setLoading(false);
 
-    fetchYouTubeData();
+          // Implement retry logic
+          if (retryCount < 3) {
+            retryCount++;
+            retryTimeout = setTimeout(fetchData, 2000 * retryCount);
+          }
+        }
+      }
+    };
+
+    fetchData();
 
     return () => {
       isMounted = false;

@@ -47,7 +47,7 @@ export function ChannelOverview() {
   const metrics = [
     {
       title: "Total Views",
-      value: stats?.views,
+      value: stats?.totalViews,
       subtitle: "Past 30 days",
       icon: <TrendingUp className="w-5 h-5 text-blue-400" />
     },
@@ -64,8 +64,8 @@ export function ChannelOverview() {
       icon: <Clock className="w-5 h-5 text-purple-400" />
     },
     {
-      title: "Overall Engagement",
-      value: stats?.engagement,
+      title: "Engagement Rate",
+      value: stats?.engagementRate,
       subtitle: "Past 30 days",
       icon: <BarChart2 className="w-5 h-5 text-orange-400" />
     }
