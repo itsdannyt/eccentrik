@@ -49,17 +49,22 @@ async function startServer() {
     const distPath = resolve(__dirname, '../dist');
     app.use(express.static(distPath));
 
-    // Catch-all route to serve index.html for client-side routing
+    // Handle SPA routing - must be after API routes
     app.get('*', (req, res) => {
-      res.sendFile(resolve(distPath, 'index.html'));
+      // Only handle HTML requests, let the static middleware handle other files
+      if (req.headers.accept?.includes('text/html')) {
+        res.sendFile(resolve(distPath, 'index.html'));
+      } else {
+        res.status(404).send('Not found');
+      }
     });
 
     // Global error handler
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
       console.error('Global error handler:', err);
-      res.status(500).json({
-        error: 'Internal Server Error',
-        message: err.message || 'An unexpected error occurred'
+      res.status(err.status || 500).json({
+        error: err.message || 'Internal Server Error',
+        details: process.env.NODE_ENV === 'development' ? err.stack : undefined
       });
     });
 
