@@ -5,6 +5,10 @@ import path from 'path';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    outDir: 'src/dist',
+    emptyOutDir: true
+  },
   server: {
     host: true, // Listen on all local IPs
     port: 5174, // Default Vite port

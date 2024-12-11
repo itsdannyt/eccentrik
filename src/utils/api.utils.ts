@@ -41,6 +41,9 @@ export async function withRetry<T>(
 }
 
 export function validateOrigin(origin: string | undefined): boolean {
+  if (process.env.NODE_ENV === 'development') {
+    return true; // Allow all origins in development
+  }
   if (!origin) return false;
   return config.allowedOrigins.includes(origin);
 }

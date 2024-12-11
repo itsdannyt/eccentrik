@@ -46,107 +46,145 @@ export function useYouTubeData() {
   const [recentVideos, setRecentVideos] = useState<RecentVideo[]>([]);
 
   useEffect(() => {
+    let isMounted = true;
+    let retryTimeout: NodeJS.Timeout;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 2000; // 2 seconds
+
     async function fetchYouTubeData() {
       if (!youtubeToken) {
+        console.log('[useYouTubeData] No YouTube token available');
         setStats(null);
         setRecentVideos([]);
+        setLoading(false);
         return;
       }
 
+      if (!isMounted) return;
       setLoading(true);
       setError(null);
 
       try {
-        const response = await fetch('http://localhost:5174/api/youtube/analytics', {
+        console.log('[useYouTubeData] Making API request with token:', youtubeToken.substring(0, 10) + '...');
+        const response = await fetch('/api/youtube/analytics', {
+          method: 'GET',
           headers: {
             'Authorization': `Bearer ${youtubeToken}`,
             'Content-Type': 'application/json'
-          },
+          }
         });
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('API Error Response:', errorText);
+          console.error('[useYouTubeData] API Error Response:', {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorText
+          });
           throw new Error(`Failed to fetch YouTube data: ${response.status} ${response.statusText}`);
         }
 
-        let data;
-        try {
-          data = await response.json();
-        } catch (parseError) {
-          console.error('JSON Parse Error:', parseError);
-          throw new Error('Invalid response format from YouTube API');
-        }
+        const data = await response.json();
+        console.log('[useYouTubeData] Raw API response:', data);
 
-        // Validate data structure
         if (!data?.overview) {
-          console.error('Invalid data structure:', data);
-          throw new Error('Invalid data structure from YouTube API');
+          console.error('[useYouTubeData] Invalid data structure:', data);
+          throw new Error('Invalid data structure received from YouTube API');
         }
 
-        // Format the stats data with fallbacks
-        setStats({
-          totalViews: formatNumber(data.overview.totalViews || '0'),
-          subscribers: formatNumber(data.overview.subscribers || '0'),
-          totalVideos: formatNumber(data.overview.totalVideos || '0'),
-          watchTime: formatWatchTime(data.overview.watchTime || '0'),
-          engagementRate: (data.overview.engagementRate || '0') + '%'
-        });
+        if (!isMounted) return;
+        
+        // Set stats with actual data, no placeholders
+        const newStats: YouTubeStats = {
+          totalViews: data.overview.totalViews,
+          subscribers: data.overview.subscribers,
+          totalVideos: data.overview.totalVideos,
+          watchTime: data.overview.watchTime,
+          engagementRate: data.overview.engagementRate
+        };
+        console.log('[useYouTubeData] Formatted stats:', newStats);
+        setStats(newStats);
 
-        // Set recent videos if available with validation
+        // Set recent videos if available
         if (Array.isArray(data.recentVideos)) {
-          setRecentVideos(data.recentVideos.map((video: any) => ({
-            id: video.id || '',
-            title: video.title || '',
-            thumbnail: video.thumbnail || '',
-            publishedAt: video.publishedAt || '',
+          const newRecentVideos = data.recentVideos.map((video: any) => ({
+            id: video.id,
+            title: video.title,
+            thumbnail: video.thumbnail,
+            publishedAt: video.publishedAt,
             stats: {
-              views: formatNumber(video.stats?.views || '0'),
-              likes: formatNumber(video.stats?.likes || '0'),
-              comments: formatNumber(video.stats?.comments || '0')
+              views: formatNumber(video.stats?.views),
+              likes: formatNumber(video.stats?.likes),
+              comments: formatNumber(video.stats?.comments)
             },
             analytics: {
-              watchTime: formatWatchTime(video.analytics?.watchTime || '0'),
-              avgViewDuration: video.analytics?.avgViewDuration || '0:00',
-              engagementRate: (video.analytics?.engagementRate || '0') + '%'
+              watchTime: formatWatchTime(video.analytics?.watchTime),
+              avgViewDuration: video.analytics?.avgViewDuration,
+              engagementRate: video.analytics?.engagementRate ? `${video.analytics.engagementRate}%` : null
             },
             insights: Array.isArray(video.insights) ? video.insights : []
-          })));
+          }));
+          console.log('[useYouTubeData] Formatted recent videos:', newRecentVideos);
+          setRecentVideos(newRecentVideos);
         }
+
+        setLoading(false);
       } catch (err) {
-        console.error('Error fetching YouTube data:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch YouTube data');
+        console.error('[useYouTubeData] Error fetching YouTube data:', err);
+        if (!isMounted) return;
+        
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch YouTube data';
+        setError(errorMessage);
         setStats(null);
         setRecentVideos([]);
+
+        // Retry logic for connection errors
+        if (errorMessage.includes('Failed to connect to server') && retryCount < MAX_RETRIES) {
+          retryCount++;
+          console.log(`[useYouTubeData] Retrying in ${RETRY_DELAY}ms... (Attempt ${retryCount}/${MAX_RETRIES})`);
+          retryTimeout = setTimeout(fetchYouTubeData, RETRY_DELAY);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
     fetchYouTubeData();
+
+    return () => {
+      isMounted = false;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+    };
   }, [youtubeToken]);
 
   const formattedStats: FormattedStats | null = stats ? {
-    subscribers: formatNumber(stats.subscribers || '0'),
-    views: formatNumber(stats.totalViews || '0'),
-    videos: formatNumber(stats.totalVideos || '0'),
-    watchTime: formatWatchTime(stats.watchTime || '0'),
-    engagement: stats.engagementRate || '0%'
+    subscribers: stats.subscribers ? formatNumber(stats.subscribers) : null,
+    views: stats.totalViews ? formatNumber(stats.totalViews) : null,
+    videos: stats.totalVideos ? formatNumber(stats.totalVideos) : null,
+    watchTime: stats.watchTime ? formatWatchTime(stats.watchTime) : null,
+    engagement: stats.engagementRate ? `${stats.engagementRate}%` : null
   } : null;
 
   return { stats: formattedStats, recentVideos, loading, error };
 }
 
 function formatNumber(num: string): string {
-  const n = parseInt(num);
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-  return num;
+  const n = parseInt(num, 10);
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return n.toString();
 }
 
 function formatWatchTime(minutes: string): string {
-  const mins = parseInt(minutes);
-  if (mins >= 1440) return Math.round(mins / 1440) + ' days';
-  if (mins >= 60) return Math.round(mins / 60) + ' hours';
-  return mins + ' mins';
+  const mins = parseInt(minutes, 10);
+  if (mins >= 60) {
+    const hours = Math.floor(mins / 60);
+    return hours.toString() + ' hrs';
+  }
+  return mins + ' min';
 }

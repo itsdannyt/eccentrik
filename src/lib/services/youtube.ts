@@ -67,41 +67,6 @@ export async function fetchTrendingVideos(category: string = ''): Promise<YouTub
     console.log('API Key present:', !!YOUTUBE_API_KEY);
     console.log('Category:', category);
     
-    // For development, return mock data if we get a 403
-    const handleApiError = (error: any) => {
-      console.error('YouTube API error:', error);
-      if (error?.status === 403 && process.env.NODE_ENV === 'development') {
-        console.log('Using mock data for development');
-        return {
-          items: [
-            {
-              id: 'mock1',
-              snippet: {
-                title: 'Sample Video 1',
-                thumbnails: { high: { url: 'https://via.placeholder.com/480x360' } },
-                channelTitle: 'Sample Channel',
-                publishedAt: new Date().toISOString()
-              },
-              statistics: { viewCount: '1000000' },
-              contentDetails: { duration: 'PT15M33S' }
-            },
-            {
-              id: 'mock2',
-              snippet: {
-                title: 'Sample Video 2',
-                thumbnails: { high: { url: 'https://via.placeholder.com/480x360' } },
-                channelTitle: 'Sample Channel',
-                publishedAt: new Date().toISOString()
-              },
-              statistics: { viewCount: '500000' },
-              contentDetails: { duration: 'PT8M12S' }
-            }
-          ]
-        };
-      }
-      throw error;
-    };
-    
     let url = `${YOUTUBE_API_BASE_URL}/videos?part=snippet,statistics,contentDetails&chart=mostPopular&maxResults=3&key=${YOUTUBE_API_KEY}`;
     
     if (category && category !== 'Overall') {
@@ -112,7 +77,7 @@ export async function fetchTrendingVideos(category: string = ''): Promise<YouTub
       const searchData = await searchResponse.json();
       
       if (!searchResponse.ok) {
-        return handleApiError(searchData.error).items;
+        throw searchData.error;
       }
       
       // Get the video IDs from search results
@@ -125,7 +90,7 @@ export async function fetchTrendingVideos(category: string = ''): Promise<YouTub
     const data: YouTubeApiResponse = await response.json();
 
     if (!response.ok) {
-      return handleApiError(data.error).items;
+      throw data.error;
     }
 
     if (!data.items || data.items.length === 0) {
@@ -150,3 +115,26 @@ export async function fetchTrendingVideos(category: string = ''): Promise<YouTub
     throw error;
   }
 }
+
+export const disconnectYouTubeChannel = async () => {
+  try {
+    console.log('Disconnecting YouTube channel...');
+    const response = await fetch('/api/youtube/disconnect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to disconnect YouTube channel');
+    }
+
+    const data = await response.json();
+    console.log('YouTube channel disconnected successfully');
+    return data;
+  } catch (error: any) {
+    console.error('Failed to disconnect YouTube channel:', error);
+    throw new Error('Failed to disconnect YouTube channel: ' + error.message);
+  }
+};

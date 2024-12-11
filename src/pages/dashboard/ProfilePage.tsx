@@ -1,11 +1,24 @@
 import React from 'react';
 import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../lib/auth/AuthProvider';
-import { User, CreditCard, Package, Bell, ExternalLink, Shield } from 'lucide-react';
+import { User, CreditCard, Package, Bell, ExternalLink, Shield, Youtube } from 'lucide-react';
+import { disconnectYouTubeChannel } from '../../lib/services/youtube';
+import { toast } from 'react-hot-toast';
 
 export function ProfilePage() {
   const { user } = useAuth();
   
+  const handleDisconnectYouTube = async () => {
+    try {
+      await disconnectYouTubeChannel();
+      toast.success('YouTube channel disconnected successfully');
+      // Refresh the page to update the UI
+      window.location.reload();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
   // Example subscription data - replace with actual data from your backend
   const subscriptionData = {
     plan: 'Pro',
@@ -101,6 +114,28 @@ export function ProfilePage() {
                 <ExternalLink className="w-4 h-4" />
               </Button>
             </div>
+          </div>
+        </div>
+
+        {/* YouTube Connection */}
+        <div className="bg-gray-950/80 backdrop-blur-sm border border-white/10 rounded-xl p-5 sm:p-6">
+          <div className="flex items-center gap-2 text-orange-500 mb-4">
+            <Youtube className="w-5 h-5" />
+            <h2 className="text-lg font-semibold">YouTube Connection</h2>
+          </div>
+
+          <div className="space-y-4">
+            <p className="text-gray-400">
+              Manage your YouTube channel connection. Disconnecting will remove access to your channel's analytics and data.
+            </p>
+
+            <Button 
+              onClick={handleDisconnectYouTube}
+              className="flex items-center justify-center gap-2 w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white"
+            >
+              Disconnect YouTube Channel
+              <Youtube className="w-4 h-4" />
+            </Button>
           </div>
         </div>
 
