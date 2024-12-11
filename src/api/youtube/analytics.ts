@@ -69,8 +69,6 @@ router.options('/analytics', (req, res) => {
 
 // Main analytics endpoint
 router.get('/analytics', asyncHandler(async (req, res) => {
-  console.log('\n=== YouTube Analytics Request ===');
-  
   // Check authorization header
   const authorization = req.headers.authorization;
   if (!authorization) {
@@ -95,19 +93,29 @@ router.get('/analytics', asyncHandler(async (req, res) => {
 
   try {
     const analyticsService = new YouTubeAnalyticsService(accessToken);
-    const data = await analyticsService.getChannelAnalytics();
+    await analyticsService.initialize();
+    const channelData = await analyticsService.getChannelAnalytics();
     
-    // Send properly formatted JSON response
-    res.json({
-      totalViews: data.overview.totalViews,
-      subscribers: data.overview.subscribers,
-      totalVideos: data.overview.totalVideos,
-      watchTime: data.recentPerformance?.watchTime?.[0] || '0',
-      engagementRate: data.overview.engagementRate
-    });
+    // Format the response data
+    const responseData = {
+      totalViews: channelData.overview.totalViews || '0',
+      subscribers: channelData.overview.subscribers || '0',
+      totalVideos: channelData.overview.totalVideos || '0',
+      watchTime: channelData.recentPerformance?.watchTime?.[0]?.toString() || '0',
+      engagementRate: channelData.overview.engagementRate || '0'
+    };
+
+    // Set proper content type and send response
+    res.setHeader('Content-Type', 'application/json');
+    res.json(responseData);
   } catch (error: any) {
     console.error('Analytics Error:', error);
-    throw new Error(error.message || 'Failed to fetch YouTube analytics');
+    res.status(500).json({
+      error: {
+        message: error.message || 'Failed to fetch YouTube analytics',
+        status: 500
+      }
+    });
   }
 }));
 
