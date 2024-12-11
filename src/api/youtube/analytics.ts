@@ -69,29 +69,32 @@ router.options('/analytics', (req, res) => {
 
 // Main analytics endpoint
 router.get('/analytics', asyncHandler(async (req, res) => {
-  // Check authorization header
-  const authorization = req.headers.authorization;
-  if (!authorization) {
-    return res.status(401).json({ 
-      error: {
-        message: 'No authorization token provided',
-        status: 401
-      }
-    });
-  }
-
-  // Extract and validate access token
-  const accessToken = authorization.replace(/^Bearer\s+/i, '');
-  if (!accessToken) {
-    return res.status(401).json({ 
-      error: {
-        message: 'Invalid authorization format',
-        status: 401
-      }
-    });
-  }
-
   try {
+    // Check authorization header
+    const authorization = req.headers.authorization;
+    if (!authorization) {
+      return res.status(401).json({ 
+        error: {
+          message: 'No authorization token provided',
+          status: 401
+        }
+      });
+    }
+
+    // Extract and validate access token
+    const accessToken = authorization.replace(/^Bearer\s+/i, '');
+    if (!accessToken) {
+      return res.status(401).json({ 
+        error: {
+          message: 'Invalid authorization format',
+          status: 401
+        }
+      });
+    }
+
+    // Set content type early
+    res.setHeader('Content-Type', 'application/json');
+
     const analyticsService = new YouTubeAnalyticsService(accessToken);
     await analyticsService.initialize();
     const channelData = await analyticsService.getChannelAnalytics();
@@ -105,12 +108,14 @@ router.get('/analytics', asyncHandler(async (req, res) => {
       engagementRate: channelData.overview.engagementRate || '0'
     };
 
-    // Set proper content type and send response
-    res.setHeader('Content-Type', 'application/json');
-    res.json(responseData);
+    // Send the response
+    return res.json(responseData);
   } catch (error: any) {
     console.error('Analytics Error:', error);
-    res.status(500).json({
+    
+    // Set content type for error response
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(500).json({
       error: {
         message: error.message || 'Failed to fetch YouTube analytics',
         status: 500

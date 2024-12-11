@@ -28,28 +28,54 @@ async function startServer() {
     const app = express();
     const port = process.env.PORT || 5174;
 
-    // Configure CORS
+    // Configure CORS with specific options
     app.use(cors({
       origin: [
         'http://localhost:5174',
         'http://localhost:3000',
         'https://eccentrik.co'
       ],
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
       credentials: true
     }));
 
     // Parse JSON bodies
     app.use(express.json());
 
-    // API routes should come before static files
-    app.use('/api/youtube', youtubeRouter);
-    app.use('/auth/youtube', youtubeAuthRouter);
+    // Set security headers
+    app.use((req, res, next) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      next();
+    });
+
+    // API routes - make sure they're handled first
+    app.use('/api/youtube', (req, res, next) => {
+      res.type('application/json');
+      next();
+    }, youtubeRouter);
+    
+    app.use('/auth/youtube', (req, res, next) => {
+      res.type('application/json');
+      next();
+    }, youtubeAuthRouter);
 
     // Serve static files from the dist directory
     const distPath = resolve(__dirname, '../dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      setHeaders: (res, path) => {
+        // Set proper content type for JavaScript files
+        if (path.endsWith('.js')) {
+          res.setHeader('Content-Type', 'application/javascript');
+        }
+        // Set proper content type for TypeScript files
+        if (path.endsWith('.ts')) {
+          res.setHeader('Content-Type', 'application/javascript');
+        }
+      }
+    }));
 
-    // SPA fallback - send index.html for any unmatched routes
+    // SPA fallback - must come after API routes
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api/')) {
         next();
@@ -61,6 +87,9 @@ async function startServer() {
     // Error handling middleware
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
       console.error('Server Error:', err);
+      
+      // Make sure we're sending JSON
+      res.setHeader('Content-Type', 'application/json');
       res.status(err.status || 500).json({
         error: {
           message: err.message || 'Internal Server Error',
