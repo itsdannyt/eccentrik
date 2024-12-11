@@ -29,14 +29,6 @@ function calculateEngagementRate(stats: ChannelStats): string {
   return ((interactions / views) * 100).toFixed(2);
 }
 
-export const config = {
-  runtime: 'edge',
-  unstable_allowDynamic: [
-    '/node_modules/googleapis/**',
-    '/node_modules/googleapis-common/**'
-  ]
-};
-
 const handler = async (
   req: VercelRequest,
   res: VercelResponse
