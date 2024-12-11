@@ -43,7 +43,6 @@ export function useYouTubeData() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<YouTubeStats | null>(null);
-  const [recentVideos, setRecentVideos] = useState<RecentVideo[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -60,18 +59,34 @@ export function useYouTubeData() {
         setLoading(true);
         setError(null);
 
-        const response = await fetch('http://localhost:5174/api/youtube/analytics', {
+        const response = await fetch('/api/youtube/analytics', {
+          method: 'GET',
           headers: {
             'Authorization': `Bearer ${youtubeToken}`,
-            'Accept': 'application/json'
-          }
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include'
         });
 
         if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API Error:', {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorText
+          });
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          console.error('Invalid content type:', contentType);
+          throw new Error('Invalid response format');
+        }
+
         const data = await response.json();
+        console.log('Received data:', data);
         
         if (isMounted) {
           setStats(data);
@@ -83,7 +98,6 @@ export function useYouTubeData() {
           setError(err instanceof Error ? err.message : 'Failed to fetch YouTube data');
           setLoading(false);
 
-          // Implement retry logic
           if (retryCount < 3) {
             retryCount++;
             retryTimeout = setTimeout(fetchData, 2000 * retryCount);
@@ -110,7 +124,7 @@ export function useYouTubeData() {
     engagement: stats.engagementRate ? `${stats.engagementRate}%` : null
   } : null;
 
-  return { stats: formattedStats, recentVideos, loading, error };
+  return { stats: formattedStats, loading, error };
 }
 
 function formatNumber(num: string): string {

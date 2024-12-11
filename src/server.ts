@@ -28,6 +28,16 @@ async function startServer() {
     const app = express();
     const port = process.env.PORT || 5174;
 
+    // Enable detailed error handling in development
+    if (process.env.NODE_ENV !== 'production') {
+      app.set('json spaces', 2);
+      app.use((req, res, next) => {
+        console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+        console.log('Headers:', req.headers);
+        next();
+      });
+    }
+
     // Configure CORS with specific options
     app.use(cors({
       origin: [
@@ -37,7 +47,8 @@ async function startServer() {
       ],
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-      credentials: true
+      credentials: true,
+      optionsSuccessStatus: 200
     }));
 
     // Parse JSON bodies
@@ -46,6 +57,7 @@ async function startServer() {
     // Set security headers
     app.use((req, res, next) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
       next();
     });
 
@@ -64,11 +76,9 @@ async function startServer() {
     const distPath = resolve(__dirname, '../dist');
     app.use(express.static(distPath, {
       setHeaders: (res, path) => {
-        // Set proper content type for JavaScript files
         if (path.endsWith('.js')) {
           res.setHeader('Content-Type', 'application/javascript');
         }
-        // Set proper content type for TypeScript files
         if (path.endsWith('.ts')) {
           res.setHeader('Content-Type', 'application/javascript');
         }
@@ -86,14 +96,19 @@ async function startServer() {
 
     // Error handling middleware
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-      console.error('Server Error:', err);
+      console.error('Server Error:', {
+        message: err.message,
+        stack: err.stack,
+        status: err.status || 500
+      });
       
       // Make sure we're sending JSON
       res.setHeader('Content-Type', 'application/json');
       res.status(err.status || 500).json({
         error: {
           message: err.message || 'Internal Server Error',
-          status: err.status || 500
+          status: err.status || 500,
+          ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
         }
       });
     });
