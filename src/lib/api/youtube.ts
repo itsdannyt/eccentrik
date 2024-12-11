@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import axios from 'axios';
 
 const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
 
@@ -30,83 +29,6 @@ export interface VideoMetadata {
 const YOUTUBE_URL_REGEX = /^https?:\/\/(www\.)?youtube\.com\/(channel\/UC[\w-]{22}|c\/[\w-]+|@[\w-]+)\/?$/;
 const VIDEO_URL_REGEX = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/;
 
-export async function getVideoDetails(videoId: string) {
-  try {
-    const response = await axios.get('/api/youtube/data', {
-      params: {
-        endpoint: 'videos',
-        part: 'snippet',
-        id: videoId
-      }
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching video details:', error);
-    throw error;
-  }
-}
-
-export async function getChannelIdFromCustomUrl(customUrl: string) {
-  try {
-    // First try searching for the channel
-    const searchResponse = await axios.get('/api/youtube/data', {
-      params: {
-        endpoint: 'search',
-        part: 'snippet',
-        type: 'channel',
-        q: customUrl
-      }
-    });
-
-    const channels = searchResponse.data.items;
-    if (!channels || channels.length === 0) {
-      throw new Error('Channel not found');
-    }
-
-    // Try getting channel by username
-    const channelResponse = await axios.get('/api/youtube/data', {
-      params: {
-        endpoint: 'channels',
-        part: 'id',
-        forUsername: customUrl
-      }
-    });
-
-    const channelId = channelResponse.data.items?.[0]?.id;
-    if (!channelId) {
-      throw new Error('Channel ID not found');
-    }
-
-    return channelId;
-  } catch (error) {
-    console.error('Error getting channel ID:', error);
-    throw error;
-  }
-}
-
-export async function getChannelDetails(channelId: string) {
-  try {
-    const response = await axios.get('/api/youtube/data', {
-      params: {
-        endpoint: 'channels',
-        part: 'snippet,statistics',
-        id: channelId
-      }
-    });
-
-    const channel = response.data.items?.[0];
-    if (!channel) {
-      throw new Error('Channel not found');
-    }
-
-    return channel;
-  } catch (error) {
-    console.error('Error fetching channel details:', error);
-    throw error;
-  }
-}
-
 export function extractVideoIdFromUrl(url: string): string | null {
   const match = url.match(VIDEO_URL_REGEX);
   return match ? match[1] : null;
@@ -114,13 +36,16 @@ export function extractVideoIdFromUrl(url: string): string | null {
 
 export async function fetchVideoMetadata(videoId: string): Promise<VideoMetadata | null> {
   try {
-    const response = await getVideoDetails(videoId);
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${YOUTUBE_API_KEY}`
+    );
 
-    if (!response) {
+    if (!response.ok) {
       throw new Error('Failed to fetch video metadata');
     }
 
-    const snippet = response.items?.[0]?.snippet;
+    const data = await response.json();
+    const snippet = data.items?.[0]?.snippet;
 
     if (!snippet) {
       return null;
@@ -158,12 +83,40 @@ export async function validateAndFetchChannelData(url: string): Promise<YouTubeC
         throw new Error('Invalid channel URL format');
       }
 
-      channelId = await getChannelIdFromCustomUrl(customUrl);
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/channels?part=id&forUsername=${customUrl}&key=${YOUTUBE_API_KEY}`
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to resolve channel URL');
+      }
+
+      const data = await response.json();
+      channelId = data.items?.[0]?.id;
+
+      if (!channelId) {
+        throw new Error('Channel not found');
+      }
     }
 
     // Fetch channel details using the channel ID
-    const channel = await getChannelDetails(channelId);
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelId}&key=${YOUTUBE_API_KEY}`
+    );
 
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('YouTube API Error:', error);
+      throw new Error(error.error?.message || 'Failed to fetch channel data');
+    }
+
+    const data = await response.json();
+    
+    if (!data.items?.length) {
+      throw new Error('Channel not found');
+    }
+
+    const channel = data.items[0];
     return {
       id: channel.id,
       title: channel.snippet.title,

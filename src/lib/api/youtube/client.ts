@@ -10,7 +10,6 @@ export class YouTubeClient {
   private static instance: YouTubeClient | null = null;
   private cacheService: CacheService;
   private rateLimitService: RateLimitService;
-  private accessToken: string | null = null;
 
   private constructor() {
     this.cacheService = CacheService.getInstance();
@@ -24,96 +23,120 @@ export class YouTubeClient {
     return YouTubeClient.instance;
   }
 
-  public setAccessToken(token: string) {
-    this.accessToken = token;
-  }
-
-  public async getChannelAnalytics() {
-    if (!this.accessToken) {
-      throw new Error('Access token not set. Please authenticate first.');
-    }
-
-    const response = await axios.get('/api/youtube/analytics', {
-      params: {
-        accessToken: this.accessToken
-      }
-    });
-
-    return response.data;
-  }
-
-  public async getRecentVideos() {
-    try {
-      // Get recent videos
-      const videosResponse = await axios.get('/api/youtube/videos', {
-        params: {
-          accessToken: this.accessToken
-        }
-      });
-
-      const videoIds = videosResponse.data.items
-        ?.map(item => item.id?.videoId)
-        .filter((id): id is string => !!id) || [];
-
-      if (videoIds.length === 0) {
-        return [];
-      }
-
-      // Get detailed video statistics
-      const statsResponse = await axios.get('/api/youtube/videos', {
-        params: {
-          accessToken: this.accessToken,
-          id: videoIds.join(',')
-        }
-      });
-
-      // Get analytics for these videos using the YouTube Analytics API client
-      const analyticsResponse = await axios.get('/api/youtube/analytics', {
-        params: {
-          accessToken: this.accessToken,
-          videoIds: videoIds.join(',')
-        }
-      });
-
-      // Combine all data
-      return videosResponse.data.items?.map((video, index) => {
-        const stats = statsResponse.data.items?.[index]?.statistics;
-        const analyticsRow = analyticsResponse.data.rows?.find(
-          row => row[0] === video.id?.videoId
-        );
-        
-        return {
-          id: video.id?.videoId,
-          title: video.snippet?.title,
-          thumbnail: video.snippet?.thumbnails?.high?.url,
-          publishedAt: video.snippet?.publishedAt,
-          stats: {
-            views: stats?.viewCount || '0',
-            likes: stats?.likeCount || '0',
-            comments: stats?.commentCount || '0'
-          },
-          analytics: {
-            watchTime: (analyticsRow?.[1] || 0).toString(),
-            avgViewDuration: (analyticsRow?.[2] || 0).toString(),
-            engagementRate: this.calculateVideoEngagementRate(stats || {})
-          },
-          insights: this.generateVideoInsights({
-            title: video.snippet?.title || '',
-            stats: stats || {},
-            analytics: analyticsRow?.map(val => val.toString()) || []
-          })
-        };
-      }) || [];
-    } catch (error) {
-      console.error('Error fetching recent videos:', error);
-      throw error;
-    }
-  }
-
   private calculateCTR(stats: any): number {
     const views = parseInt(stats.viewCount) || 0;
     const impressions = views * 1.5; // Estimated impression count
     return Math.round((views / impressions) * 100);
+  }
+
+  private async executeRequest(endpoint: string, params: Record<string, any>) {
+    try {
+      // Build the YouTube API URL with parameters
+      const youtubeUrl = new URL(`${BASE_URL}/${endpoint}`);
+      youtubeUrl.searchParams.append('key', YOUTUBE_API_KEY);
+      for (const [key, value] of Object.entries(params)) {
+        youtubeUrl.searchParams.append(key, String(value));
+      }
+
+      // Log the request URL (without API key)
+      const debugUrl = new URL(youtubeUrl.toString());
+      debugUrl.searchParams.delete('key');
+      console.log('Making request to:', debugUrl.toString());
+
+      // Use allorigins.win as a CORS proxy
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(youtubeUrl.toString())}`;
+      console.log('Using proxy URL:', proxyUrl);
+      
+      const response = await axios.get(proxyUrl);
+      
+      // Add detailed logging for debugging
+      console.log('Proxy response status:', response.status);
+      console.log('Proxy response headers:', response.headers);
+      
+      if (!response.data) {
+        console.error('Empty response from proxy');
+        throw new Error('Empty response from proxy');
+      }
+
+      if (typeof response.data.contents === 'undefined') {
+        console.error('Response data structure:', response.data);
+        throw new Error('Invalid proxy response structure');
+      }
+
+      // Handle case where contents might be empty string
+      if (!response.data.contents) {
+        console.error('Empty contents in response:', response.data);
+        return { items: [] }; // Return empty result set
+      }
+
+      // Parse the contents, handling potential JSON parsing errors
+      try {
+        const contents = JSON.parse(response.data.contents);
+        console.log('Successfully parsed YouTube response');
+        return contents;
+      } catch (parseError) {
+        console.error('Failed to parse response contents:', {
+          error: parseError,
+          contents: response.data.contents.substring(0, 200) + '...' // Log first 200 chars
+        });
+        throw new Error('Invalid JSON in YouTube API response');
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('YouTube API Request Failed:', {
+          message: error.message,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data
+        });
+        throw new Error(`YouTube API Error: ${error.message}`);
+      }
+      console.error('Unexpected error in executeRequest:', error);
+      throw error;
+    }
+  }
+
+  private extractTopVideos(videos: any[], stats: VideoStats[]): Array<{ title: string; ctr: number; engagement: number }> {
+    return videos.map((video, index) => ({
+      title: video.snippet.title,
+      ctr: this.calculateCTR(stats[index]),
+      engagement: Math.round((parseInt(stats[index].likeCount) + parseInt(stats[index].commentCount)) / parseInt(stats[index].viewCount) * 100)
+    })).sort((a, b) => b.ctr - a.ctr).slice(0, 5);
+  }
+
+  private extractKeywords(videos: any[]): string[] {
+    const keywords = new Set<string>();
+    videos.forEach(video => {
+      const title = video.snippet.title.toLowerCase();
+      const words = title.split(' ')
+        .filter((word: string) => word.length > 3)
+        .map((word: string) => word.replace(/[^\w\s]/g, ''));
+      words.forEach((word: string) => keywords.add(word));
+    });
+    return Array.from(keywords).slice(0, 10);
+  }
+
+  private calculateAverageCTR(stats: VideoStats[]): number {
+    if (!stats.length) return 0;
+    const total = stats.reduce((sum, stat) => sum + stat.ctr, 0);
+    return Math.round(total / stats.length);
+  }
+
+  private async get30DayAnalytics(channelId: string, userId: string) {
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const analyticsResponse = await this.rateLimitService.executeWithRetry(userId, async () => {
+      return this.executeRequest('youtubeAnalytics/v2/reports', {
+        ids: `channel==${channelId}`,
+        startDate,
+        endDate,
+        metrics: 'views,estimatedMinutesWatched,averageViewDuration,subscribersGained,subscribersLost,likes,comments',
+        dimensions: 'day'
+      });
+    });
+
+    return analyticsResponse.data;
   }
 
   async getHistoricalData(channelId: string, userId: string): Promise<HistoricalData> {
@@ -123,18 +146,16 @@ export class YouTubeClient {
       if (cached) return cached;
 
       // Get channel data
-      const channelData = await axios.get('/api/youtube/channels', {
-        params: {
-          accessToken: this.accessToken,
-          id: channelId
-        }
+      const channelData = await this.executeRequest('channels', {
+        part: 'statistics,snippet,contentDetails',
+        id: channelId
       });
 
-      if (!channelData.data.items || channelData.data.items.length === 0) {
+      if (!channelData.items || channelData.items.length === 0) {
         throw new Error('Channel not found');
       }
 
-      const channel = channelData.data.items[0];
+      const channel = channelData.items[0];
       const statistics = channel.statistics;
       const channelTitle = channel.snippet.title;
       const uploadsPlaylistId = channel.contentDetails.relatedPlaylists.uploads;
@@ -191,12 +212,13 @@ export class YouTubeClient {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const response = await axios.get('/api/youtube/channels', {
-      params: {
-        accessToken: this.accessToken,
+    const response = await this.rateLimitService.executeWithRetry(userId, async () => {
+      return this.executeRequest('channels', {
         id: channelId,
+        part: 'statistics',
+        fields: 'items(statistics)',
         publishedBefore: thirtyDaysAgo.toISOString()
-      }
+      });
     });
 
     const previousStats = response.data?.items?.[0]?.statistics || {
@@ -225,12 +247,13 @@ export class YouTubeClient {
     const cached = this.cacheService.get<any>(cacheKey);
     if (cached) return cached;
 
-    const response = await axios.get('/api/youtube/videos', {
-      params: {
-        accessToken: this.accessToken,
+    const response = await this.rateLimitService.executeWithRetry(userId, async () => {
+      return this.executeRequest('videos', {
         id: videoId,
-        publishedBefore
-      }
+        part: 'statistics',
+        fields: 'items(statistics)',
+        ...(publishedBefore && { publishedBefore })
+      });
     });
 
     const stats = response.data?.items?.[0]?.statistics || {
@@ -249,13 +272,13 @@ export class YouTubeClient {
     let pageToken: string | undefined;
 
     do {
-      const response = await axios.get('/api/youtube/playlistItems', {
-        params: {
-          accessToken: this.accessToken,
+      const response = await this.rateLimitService.executeWithRetry(userId, async () => {
+        return this.executeRequest('playlistItems', {
           playlistId,
+          part: 'snippet',
           maxResults: batchSize,
           pageToken
-        }
+        });
       });
 
       allItems = allItems.concat(response.data.items);
@@ -276,86 +299,22 @@ export class YouTubeClient {
 
     const results = await Promise.all(
       batches.map(batch => 
-        axios.get('/api/youtube/videos', {
-          params: {
-            accessToken: this.accessToken,
-            id: batch.join(',')
-          }
+        this.rateLimitService.executeWithRetry(userId, async () => {
+          const response = await this.executeRequest('videos', {
+            id: batch.join(','),
+            part: 'statistics',
+            fields: 'items(statistics)'
+          });
+          return response.data.items;
         })
       )
     );
 
-    return results.flatMap(response => response.data.items);
-  }
-
-  private calculateVideoEngagementRate(stats: any): string {
-    if (!stats?.viewCount) return '0';
-    const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
-    const views = parseInt(stats.viewCount);
-    return ((interactions / views) * 100).toFixed(2);
-  }
-
-  private generateVideoInsights(data: { title: string; stats: any; analytics: string[] }): Array<{ type: 'improvement' | 'success'; message: string }> {
-    const insights: Array<{ type: 'improvement' | 'success'; message: string }> = [];
-    
-    // View performance
-    const viewCount = parseInt(data.stats?.viewCount || '0');
-    
-    if (viewCount < 100) {
-      insights.push({
-        type: 'improvement',
-        message: 'This video has low views. Consider improving your thumbnail and title for better visibility.'
-      });
-    } else if (viewCount > 1000) {
-      insights.push({
-        type: 'success',
-        message: 'This video is performing well in terms of views!'
-      });
-    }
-
-    // Engagement metrics
-    const likeCount = parseInt(data.stats?.likeCount || '0');
-    const commentCount = parseInt(data.stats?.commentCount || '0');
-    const engagementRate = ((likeCount + commentCount) / viewCount) * 100;
-
-    if (engagementRate < 5) {
-      insights.push({
-        type: 'improvement',
-        message: 'Try to increase engagement by asking questions in your video or encouraging comments.'
-      });
-    } else if (engagementRate > 10) {
-      insights.push({
-        type: 'success',
-        message: 'Great engagement! Your audience is actively interacting with this content.'
-      });
-    }
-
-    return insights;
-  }
-
-  private extractTopVideos(videos: any[], stats: VideoStats[]): Array<{ title: string; ctr: number; engagement: number }> {
-    return videos.map((video, index) => ({
-      title: video.snippet.title,
-      ctr: this.calculateCTR(stats[index]),
-      engagement: Math.round((parseInt(stats[index].likeCount) + parseInt(stats[index].commentCount)) / parseInt(stats[index].viewCount) * 100)
-    })).sort((a, b) => b.ctr - a.ctr).slice(0, 5);
-  }
-
-  private extractKeywords(videos: any[]): string[] {
-    const keywords = new Set<string>();
-    videos.forEach(video => {
-      const title = video.snippet.title.toLowerCase();
-      const words = title.split(' ')
-        .filter((word: string) => word.length > 3)
-        .map((word: string) => word.replace(/[^\w\s]/g, ''));
-      words.forEach((word: string) => keywords.add(word));
-    });
-    return Array.from(keywords).slice(0, 10);
-  }
-
-  private calculateAverageCTR(stats: VideoStats[]): number {
-    if (!stats.length) return 0;
-    const total = stats.reduce((sum, stat) => sum + stat.ctr, 0);
-    return Math.round(total / stats.length);
+    return results.flat().map(item => ({
+      viewCount: item.statistics.viewCount || '0',
+      likeCount: item.statistics.likeCount || '0',
+      commentCount: item.statistics.commentCount || '0',
+      ctr: this.calculateCTR(item.statistics)
+    }));
   }
 }

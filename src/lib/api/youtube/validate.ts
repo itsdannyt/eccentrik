@@ -12,89 +12,61 @@ export interface YouTubeChannelData {
   };
 }
 
-interface ChannelValidationResult {
-  isValid: boolean;
-  message: string;
-  channelId?: string;
-  title?: string;
-  description?: string;
-  subscriberCount?: string;
-  videoCount?: string;
-}
-
-function extractCustomUrl(url: string): string | null {
-  if (url.includes('/c/')) {
-    return url.split('/c/')[1].split('/')[0];
-  } else if (url.includes('/@')) {
-    return url.split('/@')[1].split('/')[0];
-  }
-  return null;
-}
-
-export async function validateChannelUrl(url: string): Promise<ChannelValidationResult> {
+export async function validateAndFetchChannelData(url: string): Promise<YouTubeChannelData> {
   try {
-    const customUrl = extractCustomUrl(url);
-    if (!customUrl) {
-      return { isValid: false, message: 'Invalid channel URL format' };
-    }
-
-    // Search for the channel
-    const response = await axios.get('/api/youtube/data', {
-      params: {
-        endpoint: 'search',
-        part: 'snippet',
-        type: 'channel',
-        q: customUrl
+    // Extract channel ID from URL
+    let channelId = '';
+    const urlObj = new URL(url);
+    
+    if (url.includes('/channel/')) {
+      channelId = url.split('/channel/')[1].split('/')[0];
+    } else if (url.includes('/c/') || url.includes('/@')) {
+      // For custom URLs, we need to first get the channel ID
+      const customUrl = url.includes('/c/') 
+        ? url.split('/c/')[1].split('/')[0]
+        : url.split('/@')[1].split('/')[0];
+        
+      const response = await axios.get(
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${customUrl}&key=${YOUTUBE_API_KEY}`
+      );
+      
+      if (!response.data?.items?.length) {
+        throw new Error('Channel not found');
       }
-    });
-
-    const channel = response.data.items?.[0];
-    if (!channel) {
-      return { isValid: false, message: 'Channel not found' };
+      
+      channelId = response.data.items[0].id.channelId;
+    } else {
+      throw new Error('Invalid YouTube channel URL format');
     }
 
-    // Get detailed channel info
-    const channelResponse = await axios.get('/api/youtube/data', {
-      params: {
-        endpoint: 'channels',
-        part: 'snippet,statistics',
-        id: channel.id.channelId
-      }
-    });
+    // Get channel details
+    const channelResponse = await axios.get(
+      `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id=${channelId}&key=${YOUTUBE_API_KEY}`
+    );
 
-    const channelDetails = channelResponse.data.items?.[0];
-    if (!channelDetails) {
-      return { isValid: false, message: 'Could not fetch channel details' };
+    if (!channelResponse.data?.items?.length) {
+      throw new Error('Channel not found');
     }
 
+    const channel = channelResponse.data.items[0];
+    
     return {
-      isValid: true,
-      message: 'Valid channel',
-      channelId: channelDetails.id,
-      title: channelDetails.snippet.title,
-      description: channelDetails.snippet.description,
-      subscriberCount: channelDetails.statistics.subscriberCount,
-      videoCount: channelDetails.statistics.videoCount
+      id: channelId,
+      title: channel.snippet.title,
+      statistics: {
+        viewCount: channel.statistics.viewCount,
+        subscriberCount: channel.statistics.subscriberCount,
+        videoCount: channel.statistics.videoCount,
+      },
     };
   } catch (error) {
-    console.error('Error validating channel:', error);
-    return { isValid: false, message: 'Failed to validate channel' };
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 404) {
+        throw new Error('Channel not found');
+      } else if (error.response?.status === 403) {
+        throw new Error('YouTube API quota exceeded. Please try again later.');
+      }
+    }
+    throw error;
   }
-}
-
-export async function validateAndFetchChannelData(url: string): Promise<YouTubeChannelData> {
-  const validation = await validateChannelUrl(url);
-  if (!validation.isValid) {
-    throw new Error(validation.message);
-  }
-
-  return {
-    id: validation.channelId as string,
-    title: validation.title as string,
-    statistics: {
-      viewCount: validation.videoCount as string,
-      subscriberCount: validation.subscriberCount as string,
-      videoCount: validation.videoCount as string,
-    },
-  };
 }

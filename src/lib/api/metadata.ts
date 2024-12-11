@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import axios from 'axios';
 
 const openai = new OpenAI({
   apiKey: import.meta.env.VITE_OPENAI_API_KEY,
@@ -20,15 +19,6 @@ interface MetadataAnalysis {
   trendingTopics: string[];
 }
 
-interface VideoMetadata {
-  id: string;
-  title: string;
-  description: string;
-  thumbnailUrl: string;
-  channelTitle: string;
-  publishedAt: string;
-}
-
 export async function analyzeMetadata(
   description: string,
   tags: string[],
@@ -37,12 +27,12 @@ export async function analyzeMetadata(
   try {
     const [metadataAnalysis, trendingTopics] = await Promise.all([
       analyzeWithGPT(description, tags, category),
-      fetchPopularVideosInCategory(category),
+      fetchTrendingTopics(category),
     ]);
 
     return {
       ...metadataAnalysis,
-      trendingTopics: trendingTopics.map(video => video.title),
+      trendingTopics,
     };
   } catch (error) {
     console.error('Error analyzing metadata:', error);
@@ -101,29 +91,15 @@ async function analyzeWithGPT(
   };
 }
 
-async function fetchPopularVideosInCategory(category: string): Promise<VideoMetadata[]> {
+async function fetchTrendingTopics(category: string): Promise<string[]> {
   try {
-    const response = await axios.get('/api/youtube/data', {
-      params: {
-        endpoint: 'search',
-        part: 'snippet',
-        type: 'video',
-        videoCategoryId: category,
-        order: 'viewCount',
-        maxResults: 5
-      }
-    });
-
-    return response.data.items.map((item: any) => ({
-      id: item.id.videoId,
-      title: item.snippet.title,
-      description: item.snippet.description,
-      thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
-      channelTitle: item.snippet.channelTitle,
-      publishedAt: item.snippet.publishedAt
-    }));
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoCategoryId=${category}&order=viewCount&maxResults=5&key=${import.meta.env.VITE_YOUTUBE_API_KEY}`
+    );
+    const data = await response.json();
+    return data.items?.map((item: any) => item.snippet?.title || '') || [];
   } catch (error) {
-    console.error('Error fetching popular videos:', error);
-    throw error;
+    console.error('Error fetching trending topics:', error);
+    return [];
   }
 }
