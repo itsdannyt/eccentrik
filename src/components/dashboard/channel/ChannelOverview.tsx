@@ -1,89 +1,69 @@
 import React from 'react';
 import { TrendingUp, Users, Clock, BarChart2 } from 'lucide-react';
-import { useYouTubeData } from '../../../lib/hooks/useYouTubeData';
 
 interface MetricCardProps {
   title: string;
   value: string;
+  subtitle: string;
   icon: React.ReactNode;
 }
 
-function MetricCard({ title, value, icon }: MetricCardProps) {
+function MetricCard({ title, value, subtitle, icon }: MetricCardProps) {
   return (
-    <div className="bg-gray-950/80 backdrop-blur-sm rounded-xl p-4 h-[140px] flex flex-col justify-between border border-white/10">
-      <div className="flex items-start justify-between">
-        <div className="flex flex-col">
-          <p className="text-sm text-gray-400 whitespace-nowrap">{title}</p>
-          <h3 className="text-lg sm:text-2xl font-bold mt-1 whitespace-nowrap">{value}</h3>
-        </div>
-        <div className="bg-orange-500/10 p-2 rounded-lg flex-shrink-0">
+    <div className="bg-gray-950/80 backdrop-blur-sm rounded-xl p-4 sm:p-6 border border-white/10">
+      <div className="flex items-start justify-between mb-3 sm:mb-4">
+        <div className="p-1.5 sm:p-2 bg-white/5 rounded-lg">
           {icon}
         </div>
+      </div>
+      <div>
+        <h3 className="text-xl sm:text-2xl font-bold">{value}</h3>
+        <p className="text-xs sm:text-sm text-gray-400 mt-0.5 sm:mt-1">{title}</p>
+        <p className="text-xs text-gray-500 mt-0.5 sm:mt-1">{subtitle}</p>
       </div>
     </div>
   );
 }
 
 export function ChannelOverview() {
-  const { stats, loading, error } = useYouTubeData();
-
-  if (loading) {
-    return (
-      <div className="text-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-orange-500 mx-auto mb-4"></div>
-        <p className="text-gray-400">Loading channel analytics...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-8 text-gray-400">
-        <p>{error}</p>
-      </div>
-    );
-  }
-
-  if (!stats) {
-    return (
-      <div className="text-center py-8 text-gray-400">
-        <p>No analytics data available. Please connect your YouTube account.</p>
-      </div>
-    );
-  }
-
+  // Placeholder metrics
   const metrics = [
     {
-      title: 'Total Views',
-      value: stats.views,
-      icon: <BarChart2 className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
+      title: "Total Views",
+      value: "124.5K",
+      subtitle: "Past 30 days",
+      icon: <TrendingUp className="w-5 h-5 text-blue-400" />
     },
     {
-      title: 'Subscribers',
-      value: stats.subscribers,
-      icon: <Users className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
+      title: "Subscriber Growth",
+      value: "+2,847",
+      subtitle: "Past 30 days",
+      icon: <Users className="w-5 h-5 text-green-400" />
     },
     {
-      title: 'Watch Time',
-      value: stats.watchTime,
-      icon: <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
+      title: "Watch Time",
+      value: "8.2K hrs",
+      subtitle: "Past 30 days",
+      icon: <Clock className="w-5 h-5 text-purple-400" />
     },
     {
-      title: 'Engagement Rate',
-      value: stats.engagement,
-      icon: <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
+      title: "Overall Engagement",
+      value: "9.4%",
+      subtitle: "Past 30 days",
+      icon: <BarChart2 className="w-5 h-5 text-orange-400" />
     }
   ];
 
   return (
-    <div className="w-full">
-      <h2 className="text-xl font-bold mb-4">Channel Overview</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div>
+      <h2 className="text-xl font-semibold mb-4">Channel Analytics</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {metrics.map((metric, index) => (
           <MetricCard
             key={index}
             title={metric.title}
             value={metric.value}
+            subtitle={metric.subtitle}
             icon={metric.icon}
           />
         ))}

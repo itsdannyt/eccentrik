@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthProvider';
-import { YouTubeClient } from '../api/youtube/client';
 
 interface YouTubeStats {
   totalViews: string;
@@ -40,89 +39,17 @@ interface FormattedStats {
 }
 
 export function useYouTubeData() {
-  const { user, youtubeToken } = useAuth();
+  const { youtubeToken } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<YouTubeStats>({
-    totalViews: '0',
-    subscribers: '0',
-    totalVideos: '0',
-    watchTime: '0',
-    engagementRate: '0'
-  });
+  const [stats, setStats] = useState<YouTubeStats | null>(null);
   const [recentVideos, setRecentVideos] = useState<RecentVideo[]>([]);
 
-  // Mock data for development
-  const mockRecentVideos: RecentVideo[] = [
-    {
-      id: 'mock1',
-      title: 'How to Build a Modern Web App',
-      thumbnail: 'https://i.ytimg.com/vi/mock1/maxresdefault.jpg',
-      publishedAt: new Date().toISOString(),
-      stats: {
-        views: '1.2K',
-        likes: '156',
-        comments: '23'
-      },
-      analytics: {
-        watchTime: '2.5K',
-        avgViewDuration: '4:32',
-        engagementRate: '8.5'
-      },
-      insights: [
-        {
-          type: 'success',
-          message: 'Strong viewer engagement in first 30 seconds'
-        },
-        {
-          type: 'improvement',
-          message: 'Consider adding more end cards for retention'
-        }
-      ]
-    },
-    {
-      id: 'mock2',
-      title: 'React Performance Tips & Tricks',
-      thumbnail: 'https://i.ytimg.com/vi/mock2/maxresdefault.jpg',
-      publishedAt: new Date(Date.now() - 86400000).toISOString(),
-      stats: {
-        views: '856',
-        likes: '92',
-        comments: '15'
-      },
-      analytics: {
-        watchTime: '1.8K',
-        avgViewDuration: '5:21',
-        engagementRate: '7.2'
-      },
-      insights: [
-        {
-          type: 'success',
-          message: 'High retention rate throughout video'
-        }
-      ]
-    }
-  ];
-
   useEffect(() => {
-    const fetchData = async () => {
-      console.log('fetchData called, token:', youtubeToken ? 'present' : 'absent');
-      
+    async function fetchYouTubeData() {
       if (!youtubeToken) {
-        // Use mock data in development when no token is present
-        if (import.meta.env.DEV) {
-          console.log('Using mock data in development mode (no token)');
-          setStats({
-            totalViews: '125.4K',
-            subscribers: '12.8K',
-            totalVideos: '45',
-            watchTime: '458.2K',
-            engagementRate: '8.5'
-          });
-          setRecentVideos(mockRecentVideos);
-          return;
-        }
-        setError('YouTube access token not found. Please connect your YouTube account.');
+        setStats(null);
+        setRecentVideos([]);
         return;
       }
 
@@ -130,78 +57,81 @@ export function useYouTubeData() {
       setError(null);
 
       try {
-        const client = YouTubeClient.getInstance();
-        client.setAccessToken(youtubeToken);
+        const response = await fetch('http://localhost:5174/api/youtube/analytics', {
+          headers: {
+            'Authorization': `Bearer ${youtubeToken}`,
+          },
+        });
 
-        // Fetch channel analytics
-        const analytics = await client.getChannelAnalytics();
-        setStats(analytics.overview);
+        if (!response.ok) {
+          throw new Error('Failed to fetch YouTube data');
+        }
 
-        // Fetch recent videos
-        const videos = await client.getRecentVideos();
-        console.log('Fetched videos:', videos);
-        if (Array.isArray(videos)) {
-          setRecentVideos(videos);
-        } else {
-          console.error('Received non-array videos:', videos);
-          if (import.meta.env.DEV) {
-            console.log('Using mock videos in development mode (invalid response)');
-            setRecentVideos(mockRecentVideos);
-          } else {
-            setRecentVideos([]);
-          }
+        const data = await response.json();
+        
+        // Format the stats data
+        setStats({
+          totalViews: formatNumber(data.overview.totalViews),
+          subscribers: formatNumber(data.overview.subscribers),
+          totalVideos: formatNumber(data.overview.totalVideos),
+          watchTime: formatWatchTime(data.overview.watchTime),
+          engagementRate: data.overview.engagementRate + '%'
+        });
+
+        // Set recent videos if available
+        if (data.recentVideos) {
+          setRecentVideos(data.recentVideos.map((video: any) => ({
+            id: video.id,
+            title: video.title,
+            thumbnail: video.thumbnail,
+            publishedAt: video.publishedAt,
+            stats: {
+              views: formatNumber(video.stats.views),
+              likes: formatNumber(video.stats.likes),
+              comments: formatNumber(video.stats.comments)
+            },
+            analytics: {
+              watchTime: formatWatchTime(video.analytics.watchTime),
+              avgViewDuration: video.analytics.avgViewDuration,
+              engagementRate: video.analytics.engagementRate + '%'
+            },
+            insights: video.insights || []
+          })));
         }
       } catch (err) {
         console.error('Error fetching YouTube data:', err);
-        // Use mock data in development when API calls fail
-        if (import.meta.env.DEV) {
-          console.log('API call failed, using mock data in development mode');
-          setStats({
-            totalViews: '125.4K',
-            subscribers: '12.8K',
-            totalVideos: '45',
-            watchTime: '458.2K',
-            engagementRate: '8.5'
-          });
-          setRecentVideos(mockRecentVideos);
-          return;
-        }
-        setError('Failed to fetch YouTube data');
+        setError(err instanceof Error ? err.message : 'Failed to fetch YouTube data');
+        setStats(null);
+        setRecentVideos([]);
       } finally {
         setLoading(false);
       }
-    };
+    }
 
-    fetchData();
+    fetchYouTubeData();
   }, [youtubeToken]);
 
-  const formattedStats: FormattedStats = {
+  const formattedStats: FormattedStats = stats ? {
     subscribers: formatNumber(stats.subscribers),
     views: formatNumber(stats.totalViews),
     videos: formatNumber(stats.totalVideos),
     watchTime: formatWatchTime(stats.watchTime),
-    engagement: `${stats.engagementRate}%`
-  };
+    engagement: stats.engagementRate
+  } : null;
 
-  return {
-    loading,
-    error,
-    stats: formattedStats,
-    recentVideos,
-  };
+  return { stats: formattedStats, recentVideos, loading, error };
 }
 
 function formatNumber(num: string): string {
   const n = parseInt(num);
-  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
   return num;
 }
 
 function formatWatchTime(minutes: string): string {
   const mins = parseInt(minutes);
-  const hours = Math.floor(mins / 60);
-  if (hours >= 1000) return `${(hours / 1000).toFixed(1)}K hrs`;
-  if (hours > 0) return `${hours} hrs`;
-  return `${mins} mins`;
+  if (mins >= 1440) return Math.round(mins / 1440) + ' days';
+  if (mins >= 60) return Math.round(mins / 60) + ' hours';
+  return mins + ' mins';
 }

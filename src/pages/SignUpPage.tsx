@@ -6,7 +6,6 @@ import { SignUpFormStep1, type SignUpStep1Data } from '../components/auth/SignUp
 import { SignUpFormStep2 } from '../components/auth/SignUpFormStep2';
 import { LoadingPopup } from '../components/ui/LoadingPopup';
 import { signUp } from '../lib/auth';
-import { validateAndFetchChannelData } from '../lib/api/youtube';
 
 type LoadingStep = 'pending' | 'loading' | 'complete';
 
@@ -36,50 +35,49 @@ export function SignUpPage() {
     setStep(2);
   };
 
-  const handleStep2 = async (channelUrl: string) => {
+  const handleStep2 = async (credentials: { accessToken: string; channelId: string }) => {
     if (!formData) return;
     
     setIsLoading(true);
     try {
       // Start validation
       updateLoadingStep('validation', 'loading');
-      const channelData = await validateAndFetchChannelData(channelUrl);
+      // Validate the access token by making a test API call
+      const channelResponse = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${credentials.channelId}`, {
+        headers: {
+          'Authorization': `Bearer ${credentials.accessToken}`
+        }
+      });
+      
+      if (!channelResponse.ok) {
+        throw new Error('Failed to validate YouTube channel');
+      }
       updateLoadingStep('validation', 'complete');
 
       // Start account creation
       updateLoadingStep('account', 'loading');
-      const { data, confirmEmail } = await signUp({
-        email: formData.email,
-        password: formData.password,
-        fullName: formData.fullName,
-        metadata: {
-          youtubeChannel: channelUrl,
-          channelId: channelData.id,
-          channelTitle: channelData.title,
-          channelStats: channelData.statistics,
-        },
+      const { data: userData, confirmEmail } = await signUp({
+        ...formData,
+        youtubeData: {
+          channelId: credentials.channelId,
+          accessToken: credentials.accessToken
+        }
       });
-
       updateLoadingStep('account', 'complete');
 
       // Start analytics setup
       updateLoadingStep('analytics', 'loading');
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate analytics setup
+      // The backend will handle storing the YouTube credentials and setting up initial analytics
       updateLoadingStep('analytics', 'complete');
 
-      await new Promise(resolve => setTimeout(resolve, 500)); // Show completion state
-      
-      toast.success('Account created successfully! Please check your email to verify your account.');
-      navigate('/login');
+      if (confirmEmail) {
+        navigate('/auth/verify-email');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (error) {
       console.error('Signup error:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to create account. Please try again.');
-      setLoadingSteps({
-        validation: 'pending',
-        account: 'pending',
-        analytics: 'pending'
-      });
-    } finally {
+      toast.error(error instanceof Error ? error.message : 'Failed to create account');
       setIsLoading(false);
     }
   };
