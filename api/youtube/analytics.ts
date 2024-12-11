@@ -18,6 +18,11 @@ interface AnalyticsResponse {
     totalVideos: string;
     watchTime: string;
     engagementRate: string;
+    last30Days: {
+      views: string;
+      watchTimeMinutes: string;
+      averageViewDurationSeconds: string;
+    };
   };
   analyticsData: youtubeAnalytics_v2.Schema$QueryResponse;
 }
@@ -27,6 +32,17 @@ function calculateEngagementRate(stats: ChannelStats): string {
   const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
   const views = parseInt(stats.viewCount);
   return ((interactions / views) * 100).toFixed(2);
+}
+
+function getDateRange() {
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(endDate.getDate() - 30);
+  
+  return {
+    startDate: startDate.toISOString().split('T')[0],
+    endDate: endDate.toISOString().split('T')[0]
+  };
 }
 
 export default async function handler(
@@ -45,7 +61,6 @@ export default async function handler(
       return;
     }
 
-    // Extract token, handling both "Bearer" prefix and raw token cases
     const accessToken = authorization.replace(/^Bearer\s+/i, '');
     
     const oauth2Client = new google.auth.OAuth2(
@@ -62,7 +77,6 @@ export default async function handler(
     const youtubeAnalytics = google.youtubeAnalytics('v2');
 
     try {
-      // Try to get channel info first
       const channelResponse = await youtube.channels.list({
         auth: oauth2Client,
         part: ['id', 'statistics'],
@@ -77,28 +91,44 @@ export default async function handler(
       // Get basic channel statistics
       const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
 
-      // Get analytics data with supported metrics
+      // Get date range for last 30 days
+      const { startDate, endDate } = getDateRange();
+
+      // Get analytics data for last 30 days
       const analyticsResponse = await youtubeAnalytics.reports.query({
         auth: oauth2Client,
         ids: `channel==${channelId}`,
         metrics: 'views,estimatedMinutesWatched,averageViewDuration',
         dimensions: 'day',
-        startDate: '2020-01-01',
-        endDate: new Date().toISOString().split('T')[0],
+        startDate,
+        endDate,
         sort: '-day'
       }) as GaxiosResponse<youtubeAnalytics_v2.Schema$QueryResponse>;
 
-      // Calculate total watch time in minutes
-      const totalWatchTime = analyticsResponse.data.rows?.reduce((acc, row) => 
-        acc + (Number(row[1]) || 0), 0) || 0;
+      // Calculate 30-day totals
+      const last30DaysStats = analyticsResponse.data.rows?.reduce(
+        (acc, row) => ({
+          views: acc.views + (Number(row[1]) || 0),
+          watchTimeMinutes: acc.watchTimeMinutes + (Number(row[2]) || 0),
+          // Average view duration is in seconds
+          totalDuration: acc.totalDuration + (Number(row[3]) || 0),
+          days: acc.days + 1
+        }),
+        { views: 0, watchTimeMinutes: 0, totalDuration: 0, days: 0 }
+      ) || { views: 0, watchTimeMinutes: 0, totalDuration: 0, days: 1 };
 
       const response: AnalyticsResponse = {
         overview: {
           totalViews: stats?.viewCount || '0',
           subscribers: stats?.subscriberCount || '0',
           totalVideos: stats?.videoCount || '0',
-          watchTime: totalWatchTime.toString(),
-          engagementRate: calculateEngagementRate(stats)
+          watchTime: last30DaysStats.watchTimeMinutes.toString(),
+          engagementRate: calculateEngagementRate(stats),
+          last30Days: {
+            views: last30DaysStats.views.toString(),
+            watchTimeMinutes: last30DaysStats.watchTimeMinutes.toString(),
+            averageViewDurationSeconds: (last30DaysStats.totalDuration / last30DaysStats.days).toFixed(1)
+          }
         },
         analyticsData: analyticsResponse.data
       };
@@ -107,7 +137,6 @@ export default async function handler(
     } catch (apiError: any) {
       console.error('YouTube API Error:', apiError);
       
-      // Check if it's an auth error
       if (apiError.response?.status === 401 || apiError.code === 401) {
         res.status(401).json({
           error: 'YouTube authentication failed',
