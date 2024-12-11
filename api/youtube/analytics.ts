@@ -77,23 +77,27 @@ export default async function handler(
       // Get basic channel statistics
       const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
 
-      // Get analytics data
+      // Get analytics data with supported metrics
       const analyticsResponse = await youtubeAnalytics.reports.query({
         auth: oauth2Client,
-        dimensions: 'video',
-        metrics: 'estimatedMinutesWatched,views,likes,comments',
         ids: `channel==${channelId}`,
+        metrics: 'views,estimatedMinutesWatched,averageViewDuration',
+        dimensions: 'day',
         startDate: '2020-01-01',
         endDate: new Date().toISOString().split('T')[0],
-        sort: '-estimatedMinutesWatched'
+        sort: '-day'
       }) as GaxiosResponse<youtubeAnalytics_v2.Schema$QueryResponse>;
+
+      // Calculate total watch time in minutes
+      const totalWatchTime = analyticsResponse.data.rows?.reduce((acc, row) => 
+        acc + (Number(row[1]) || 0), 0) || 0;
 
       const response: AnalyticsResponse = {
         overview: {
           totalViews: stats?.viewCount || '0',
           subscribers: stats?.subscriberCount || '0',
           totalVideos: stats?.videoCount || '0',
-          watchTime: (analyticsResponse.data?.rows?.[0]?.[1] || 0).toString(),
+          watchTime: totalWatchTime.toString(),
           engagementRate: calculateEngagementRate(stats)
         },
         analyticsData: analyticsResponse.data
