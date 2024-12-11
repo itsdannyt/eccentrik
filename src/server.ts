@@ -41,7 +41,7 @@ async function startServer() {
     // Parse JSON bodies
     app.use(express.json());
 
-    // Configure API routes
+    // API routes should come before static files
     app.use('/api/youtube', youtubeRouter);
     app.use('/auth/youtube', youtubeAuthRouter);
 
@@ -49,21 +49,18 @@ async function startServer() {
     const distPath = resolve(__dirname, '../dist');
     app.use(express.static(distPath));
 
-    // Handle SPA routing - must be after API routes
-    app.get('*', (req, res) => {
-      // Only handle HTML requests, let the static middleware handle other files
-      if (req.headers.accept?.includes('text/html')) {
-        res.sendFile(resolve(distPath, 'index.html'));
+    // SPA fallback - send index.html for any unmatched routes
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        next();
       } else {
-        res.status(404).send('Not found');
+        res.sendFile(resolve(distPath, 'index.html'));
       }
     });
 
     // Error handling middleware
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
       console.error('Server Error:', err);
-      
-      // Send a properly formatted JSON response
       res.status(err.status || 500).json({
         error: {
           message: err.message || 'Internal Server Error',
@@ -72,33 +69,16 @@ async function startServer() {
       });
     });
 
-    // Handle 404 errors
-    app.use((req: express.Request, res: express.Response) => {
-      res.status(404).json({
-        error: {
-          message: 'Not Found',
-          status: 404
-        }
+    await new Promise<void>((resolve) => {
+      app.listen(port, () => {
+        console.log(`Server running at http://localhost:${port}`);
+        resolve();
       });
     });
 
-    // Global error handler
-    app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-      console.error('Global error handler:', err);
-      res.status(err.status || 500).json({
-        error: err.message || 'Internal Server Error',
-        details: process.env.NODE_ENV === 'development' ? err.stack : undefined
-      });
-    });
-
-    // Start server
-    app.listen(port, () => {
-      console.log(`Server running on port ${port}`);
-      console.log(`API URL: ${process.env.API_URL}`);
-    });
   } catch (error) {
     console.error('Failed to start server:', error);
-    process.exit(1);
+    throw error;
   }
 }
 
