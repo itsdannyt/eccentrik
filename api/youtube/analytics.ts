@@ -56,16 +56,31 @@ async function handler(
     const accessToken = authorization.replace('Bearer ', '');
     
     console.log('Creating OAuth2 client...');
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.VITE_YOUTUBE_CLIENT_ID,
-      process.env.VITE_YOUTUBE_CLIENT_SECRET,
-      process.env.VITE_YOUTUBE_REDIRECT_URI
-    );
+    const oauth2Client = new google.auth.OAuth2({
+      clientId: process.env.VITE_YOUTUBE_CLIENT_ID,
+      clientSecret: process.env.VITE_YOUTUBE_CLIENT_SECRET,
+      redirectUri: process.env.VITE_YOUTUBE_REDIRECT_URI
+    });
 
     console.log('Setting credentials...');
     oauth2Client.setCredentials({
-      access_token: accessToken
+      access_token: accessToken,
+      scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly'
     });
+
+    // Verify token
+    try {
+      console.log('Verifying token...');
+      const tokenInfo = await oauth2Client.getTokenInfo(accessToken);
+      console.log('Token info:', tokenInfo);
+    } catch (tokenError) {
+      console.error('Token verification failed:', tokenError);
+      res.status(401).json({ 
+        error: 'Invalid or expired token',
+        message: 'Please sign in again to refresh your YouTube access.'
+      });
+      return;
+    }
 
     console.log('Initializing YouTube API clients...');
     const youtube = google.youtube('v3');
@@ -120,6 +135,17 @@ async function handler(
     res.status(200).json(response);
   } catch (error) {
     console.error('Error in YouTube analytics endpoint:', error);
+    
+    // Check if it's an auth error
+    if (error.response?.status === 401 || error.code === 401) {
+      res.status(401).json({
+        error: 'Authentication failed',
+        message: 'Please sign in again to refresh your YouTube access.',
+        details: error.message
+      });
+      return;
+    }
+    
     // Send more detailed error information
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
