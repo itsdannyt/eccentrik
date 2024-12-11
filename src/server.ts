@@ -59,6 +59,29 @@ async function startServer() {
       }
     });
 
+    // Error handling middleware
+    app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+      console.error('Server Error:', err);
+      
+      // Send a properly formatted JSON response
+      res.status(err.status || 500).json({
+        error: {
+          message: err.message || 'Internal Server Error',
+          status: err.status || 500
+        }
+      });
+    });
+
+    // Handle 404 errors
+    app.use((req: express.Request, res: express.Response) => {
+      res.status(404).json({
+        error: {
+          message: 'Not Found',
+          status: 404
+        }
+      });
+    });
+
     // Global error handler
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
       console.error('Global error handler:', err);
