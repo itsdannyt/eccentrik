@@ -17,12 +17,22 @@ export class YouTubeClient {
     this.accessToken = token;
   }
 
+  private getHeaders() {
+    return {
+      'Authorization': `Bearer ${this.accessToken}`,
+      'Content-Type': 'application/json'
+    };
+  }
+
   public async getChannelAnalytics() {
     try {
+      if (!this.accessToken) {
+        throw new Error('Access token not set. Please authenticate first.');
+      }
+
+      console.log('Fetching channel analytics with token:', this.accessToken.substring(0, 10) + '...');
       const response = await axios.get('/api/youtube/analytics', {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`
-        }
+        headers: this.getHeaders()
       });
       return response.data;
     } catch (error) {
@@ -33,10 +43,13 @@ export class YouTubeClient {
 
   public async getRecentVideos() {
     try {
+      if (!this.accessToken) {
+        throw new Error('Access token not set. Please authenticate first.');
+      }
+
+      console.log('Fetching recent videos with token:', this.accessToken.substring(0, 10) + '...');
       const response = await axios.get('/api/youtube/videos', {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`
-        }
+        headers: this.getHeaders()
       });
       return response.data;
     } catch (error) {

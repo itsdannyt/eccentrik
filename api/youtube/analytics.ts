@@ -39,46 +39,59 @@ async function handler(
   }
 
   try {
+    // Log environment variables (without sensitive values)
+    console.log('Environment check:', {
+      hasClientId: !!process.env.VITE_YOUTUBE_CLIENT_ID,
+      hasClientSecret: !!process.env.VITE_YOUTUBE_CLIENT_SECRET,
+      hasRedirectUri: !!process.env.VITE_YOUTUBE_REDIRECT_URI
+    });
+
     const { authorization } = req.headers;
     if (!authorization) {
       res.status(401).json({ error: 'No authorization token provided' });
       return;
     }
 
+    console.log('Authorization header present');
     const accessToken = authorization.replace('Bearer ', '');
     
+    console.log('Creating OAuth2 client...');
     const oauth2Client = new google.auth.OAuth2(
       process.env.VITE_YOUTUBE_CLIENT_ID,
       process.env.VITE_YOUTUBE_CLIENT_SECRET,
       process.env.VITE_YOUTUBE_REDIRECT_URI
     );
 
+    console.log('Setting credentials...');
     oauth2Client.setCredentials({
-      access_token: accessToken,
-      scope: [
-        'https://www.googleapis.com/auth/youtube.readonly',
-        'https://www.googleapis.com/auth/yt-analytics.readonly'
-      ].join(' ')
+      access_token: accessToken
     });
 
+    console.log('Initializing YouTube API clients...');
     const youtube = google.youtube('v3');
     const youtubeAnalytics = google.youtubeAnalytics('v2');
 
-    // Get channel ID first
+    console.log('Fetching channel ID...');
     const channelResponse = await youtube.channels.list({
       auth: oauth2Client,
       part: ['id', 'statistics'],
       mine: true
     });
 
+    console.log('Channel response:', channelResponse.data);
+
     const channelId = channelResponse.data.items?.[0]?.id;
     if (!channelId) {
       throw new Error('Channel ID not found');
     }
     
+    console.log('Found channel ID:', channelId);
+    
     // Get basic channel statistics
     const stats = channelResponse.data.items?.[0]?.statistics as ChannelStats;
+    console.log('Channel statistics:', stats);
 
+    console.log('Fetching analytics data...');
     // Get analytics data
     const analyticsResponse = await youtubeAnalytics.reports.query({
       auth: oauth2Client,
@@ -89,6 +102,8 @@ async function handler(
       endDate: new Date().toISOString().split('T')[0],
       sort: '-estimatedMinutesWatched'
     }) as GaxiosResponse<youtubeAnalytics_v2.Schema$QueryResponse>;
+
+    console.log('Analytics response:', analyticsResponse.data);
 
     const response: AnalyticsResponse = {
       overview: {
@@ -101,10 +116,16 @@ async function handler(
       analyticsData: analyticsResponse.data
     };
 
+    console.log('Sending response:', response);
     res.status(200).json(response);
   } catch (error) {
-    console.error('Error fetching YouTube analytics:', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    console.error('Error in YouTube analytics endpoint:', error);
+    // Send more detailed error information
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined
+    });
   }
 }
 
