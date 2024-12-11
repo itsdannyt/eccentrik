@@ -83,7 +83,7 @@ export function YouTubeConnect() {
       sessionStorage.removeItem('youtube_oauth_state');
 
       // Exchange code for token
-      fetch('/api/youtube/token', {
+      fetch('/api/youtube/auth', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
