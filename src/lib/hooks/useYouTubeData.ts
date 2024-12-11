@@ -52,9 +52,76 @@ export function useYouTubeData() {
   });
   const [recentVideos, setRecentVideos] = useState<RecentVideo[]>([]);
 
+  // Mock data for development
+  const mockRecentVideos: RecentVideo[] = [
+    {
+      id: 'mock1',
+      title: 'How to Build a Modern Web App',
+      thumbnail: 'https://i.ytimg.com/vi/mock1/maxresdefault.jpg',
+      publishedAt: new Date().toISOString(),
+      stats: {
+        views: '1.2K',
+        likes: '156',
+        comments: '23'
+      },
+      analytics: {
+        watchTime: '2.5K',
+        avgViewDuration: '4:32',
+        engagementRate: '8.5'
+      },
+      insights: [
+        {
+          type: 'success',
+          message: 'Strong viewer engagement in first 30 seconds'
+        },
+        {
+          type: 'improvement',
+          message: 'Consider adding more end cards for retention'
+        }
+      ]
+    },
+    {
+      id: 'mock2',
+      title: 'React Performance Tips & Tricks',
+      thumbnail: 'https://i.ytimg.com/vi/mock2/maxresdefault.jpg',
+      publishedAt: new Date(Date.now() - 86400000).toISOString(),
+      stats: {
+        views: '856',
+        likes: '92',
+        comments: '15'
+      },
+      analytics: {
+        watchTime: '1.8K',
+        avgViewDuration: '5:21',
+        engagementRate: '7.2'
+      },
+      insights: [
+        {
+          type: 'success',
+          message: 'High retention rate throughout video'
+        }
+      ]
+    }
+  ];
+
   useEffect(() => {
     const fetchData = async () => {
+      console.log('fetchData called, token:', youtubeToken ? 'present' : 'absent');
+      
       if (!youtubeToken) {
+        // Use mock data in development when no token is present
+        if (import.meta.env.DEV) {
+          console.log('Using mock data in development mode (no token)');
+          setStats({
+            totalViews: '125.4K',
+            subscribers: '12.8K',
+            totalVideos: '45',
+            watchTime: '458.2K',
+            engagementRate: '8.5'
+          });
+          setRecentVideos(mockRecentVideos);
+          return;
+        }
         setError('YouTube access token not found. Please connect your YouTube account.');
         return;
       }
@@ -72,9 +139,33 @@ export function useYouTubeData() {
 
         // Fetch recent videos
         const videos = await client.getRecentVideos();
-        setRecentVideos(videos);
+        console.log('Fetched videos:', videos);
+        if (Array.isArray(videos)) {
+          setRecentVideos(videos);
+        } else {
+          console.error('Received non-array videos:', videos);
+          if (import.meta.env.DEV) {
+            console.log('Using mock videos in development mode (invalid response)');
+            setRecentVideos(mockRecentVideos);
+          } else {
+            setRecentVideos([]);
+          }
+        }
       } catch (err) {
         console.error('Error fetching YouTube data:', err);
+        // Use mock data in development when API calls fail
+        if (import.meta.env.DEV) {
+          console.log('API call failed, using mock data in development mode');
+          setStats({
+            totalViews: '125.4K',
+            subscribers: '12.8K',
+            totalVideos: '45',
+            watchTime: '458.2K',
+            engagementRate: '8.5'
+          });
+          setRecentVideos(mockRecentVideos);
+          return;
+        }
         setError('Failed to fetch YouTube data');
       } finally {
         setLoading(false);

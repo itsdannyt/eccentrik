@@ -5,6 +5,7 @@ import { useAuth } from '../../lib/auth/AuthProvider';
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, TrendingUp } from 'lucide-react';
 import { YouTubeConnect } from '../auth/YouTubeConnect';
+import { RecentVideos } from './recent-videos/RecentVideos';
 
 export function DashboardOverview() {
   const { user, youtubeToken } = useAuth();
@@ -32,6 +33,14 @@ export function DashboardOverview() {
       {youtubeToken ? (
         <div className="space-y-6 sm:space-y-8">
           <ChannelOverview />
+          
+          {/* Recent Videos */}
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold">Recent Performance</h2>
+            <div className="bg-gray-950/80 backdrop-blur-sm rounded-xl p-6 border border-white/10">
+              <RecentVideos />
+            </div>
+          </div>
           
           {/* Navigation Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -2,7 +2,7 @@ const YOUTUBE_API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
 const YOUTUBE_API_BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
 if (!YOUTUBE_API_KEY) {
-  throw new Error('YouTube API key is missing. Please add VITE_YOUTUBE_API_KEY to your .env file');
+  throw new Error('YouTube API key is missing. Please add VITE_YOUTUBE_API_KEY to your .env file')
 }
 
 export interface YouTubeVideo {
@@ -64,6 +64,44 @@ function formatDuration(duration: string): string {
 
 export async function fetchTrendingVideos(category: string = ''): Promise<YouTubeVideo[]> {
   try {
+    console.log('API Key present:', !!YOUTUBE_API_KEY);
+    console.log('Category:', category);
+    
+    // For development, return mock data if we get a 403
+    const handleApiError = (error: any) => {
+      console.error('YouTube API error:', error);
+      if (error?.status === 403 && process.env.NODE_ENV === 'development') {
+        console.log('Using mock data for development');
+        return {
+          items: [
+            {
+              id: 'mock1',
+              snippet: {
+                title: 'Sample Video 1',
+                thumbnails: { high: { url: 'https://via.placeholder.com/480x360' } },
+                channelTitle: 'Sample Channel',
+                publishedAt: new Date().toISOString()
+              },
+              statistics: { viewCount: '1000000' },
+              contentDetails: { duration: 'PT15M33S' }
+            },
+            {
+              id: 'mock2',
+              snippet: {
+                title: 'Sample Video 2',
+                thumbnails: { high: { url: 'https://via.placeholder.com/480x360' } },
+                channelTitle: 'Sample Channel',
+                publishedAt: new Date().toISOString()
+              },
+              statistics: { viewCount: '500000' },
+              contentDetails: { duration: 'PT8M12S' }
+            }
+          ]
+        };
+      }
+      throw error;
+    };
+    
     let url = `${YOUTUBE_API_BASE_URL}/videos?part=snippet,statistics,contentDetails&chart=mostPopular&maxResults=3&key=${YOUTUBE_API_KEY}`;
     
     if (category && category !== 'Overall') {
@@ -74,8 +112,7 @@ export async function fetchTrendingVideos(category: string = ''): Promise<YouTub
       const searchData = await searchResponse.json();
       
       if (!searchResponse.ok) {
-        console.error('YouTube search API error:', searchData);
-        throw new Error(`YouTube API error: ${searchData.error?.message || 'Unknown error'}`);
+        return handleApiError(searchData.error).items;
       }
       
       // Get the video IDs from search results
@@ -88,8 +125,7 @@ export async function fetchTrendingVideos(category: string = ''): Promise<YouTub
     const data: YouTubeApiResponse = await response.json();
 
     if (!response.ok) {
-      console.error('YouTube API error:', data);
-      throw new Error(`YouTube API error: ${data.error?.message || 'Unknown error'}`);
+      return handleApiError(data.error).items;
     }
 
     if (!data.items || data.items.length === 0) {
@@ -97,7 +133,7 @@ export async function fetchTrendingVideos(category: string = ''): Promise<YouTub
       return [];
     }
 
-    return data.items.map(video => ({
+    const videos = data.items.map(video => ({
       id: video.id,
       title: video.snippet.title,
       thumbnailUrl: video.snippet.thumbnails.high.url,
@@ -106,6 +142,9 @@ export async function fetchTrendingVideos(category: string = ''): Promise<YouTub
       publishedAt: new Date(video.snippet.publishedAt),
       duration: formatDuration(video.contentDetails.duration)
     }));
+    
+    console.log('Processed videos:', videos);
+    return videos;
   } catch (error) {
     console.error('Error fetching YouTube videos:', error);
     throw error;

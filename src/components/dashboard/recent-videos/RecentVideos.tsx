@@ -6,6 +6,16 @@ import { Video } from 'lucide-react';
 
 export function RecentVideos() {
   const { recentVideos, loading } = useYouTubeData();
+  
+  if (import.meta.env.DEV) {
+    console.log('RecentVideos state:', {
+      recentVideos,
+      loading,
+      type: recentVideos ? typeof recentVideos : 'undefined',
+      isArray: Array.isArray(recentVideos),
+      length: Array.isArray(recentVideos) ? recentVideos.length : 'N/A'
+    });
+  }
 
   if (loading) {
     return (
@@ -38,7 +48,9 @@ export function RecentVideos() {
     );
   }
 
-  if (!recentVideos.length) {
+  const videos = Array.isArray(recentVideos) ? recentVideos : [];
+
+  if (videos.length === 0) {
     return (
       <div className="bg-gray-950/80 backdrop-blur-sm rounded-xl p-8 text-center border border-white/10">
         <Video className="w-12 h-12 text-orange-500 mx-auto mb-4" />
@@ -70,7 +82,7 @@ export function RecentVideos() {
         </Button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {recentVideos.map((video) => (
+        {videos.map((video) => (
           <VideoCard
             key={video.id}
             {...video}

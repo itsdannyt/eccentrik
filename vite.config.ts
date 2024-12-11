@@ -7,7 +7,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true, // Listen on all local IPs
-    port: 5173, // Default Vite port
+    port: 5174, // Default Vite port
+    strictPort: true, // This will make Vite fail if port 5174 is not available instead of trying another port
   },
   resolve: {
     alias: {

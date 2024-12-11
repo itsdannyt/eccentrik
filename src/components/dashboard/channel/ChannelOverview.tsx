@@ -28,11 +28,28 @@ export function ChannelOverview() {
   const { stats, loading, error } = useYouTubeData();
 
   if (loading) {
-    return <div>Loading channel analytics...</div>;
+    return (
+      <div className="text-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-orange-500 mx-auto mb-4"></div>
+        <p className="text-gray-400">Loading channel analytics...</p>
+      </div>
+    );
   }
 
   if (error) {
-    return <div>Error loading channel analytics: {error}</div>;
+    return (
+      <div className="text-center py-8 text-gray-400">
+        <p>{error}</p>
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div className="text-center py-8 text-gray-400">
+        <p>No analytics data available. Please connect your YouTube account.</p>
+      </div>
+    );
   }
 
   const metrics = [

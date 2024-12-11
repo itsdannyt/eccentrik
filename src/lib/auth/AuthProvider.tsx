@@ -40,9 +40,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session check:', {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        hasYouTubeToken: !!session?.user?.user_metadata?.youtube_token
+      });
+      
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user?.user_metadata?.youtube_token) {
+        console.log('Setting YouTube token from metadata');
         setYoutubeToken(session.user.user_metadata.youtube_token);
       }
       setLoading(false);
@@ -50,9 +57,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('Auth state changed:', {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        hasYouTubeToken: !!session?.user?.user_metadata?.youtube_token
+      });
+      
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user?.user_metadata?.youtube_token) {
+        console.log('Setting YouTube token from metadata after auth change');
         setYoutubeToken(session.user.user_metadata.youtube_token);
       }
       setLoading(false);

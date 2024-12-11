@@ -103,20 +103,59 @@ export async function getVideoInsights(
   views: string,
   publishedAt: Date
 ): Promise<VideoInsight> {
-  // Check cache
-  const cached = insightsCache.get(videoId);
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    return cached.insights;
+  try {
+    // Check cache first
+    const cached = insightsCache.get(videoId);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached.insights;
+    }
+
+    // For development, return mock insights if OpenAI key is not available
+    if (!OPENAI_API_KEY && process.env.NODE_ENV === 'development') {
+      console.log('Using mock insights for development');
+      const mockInsights: VideoInsight = {
+        title: 'Title Analysis',
+        description: 'This video uses effective keywords and clear messaging.',
+        thumbnailAnalysis: 'The thumbnail is eye-catching and clearly shows the topic.',
+        keyStrategies: [
+          'Use of trending topics',
+          'Clear value proposition',
+          'Engaging thumbnail'
+        ],
+        engagementFactors: [
+          {
+            factor: 'Title Optimization',
+            impact: 'high',
+            suggestion: 'The title effectively uses keywords and creates curiosity'
+          },
+          {
+            factor: 'Thumbnail Design',
+            impact: 'medium',
+            suggestion: 'Consider adding more contrast to make text more readable'
+          }
+        ]
+      };
+      
+      // Cache the mock insights
+      insightsCache.set(videoId, {
+        insights: mockInsights,
+        timestamp: Date.now()
+      });
+      
+      return mockInsights;
+    }
+
+    const insights = await analyzeVideo(title, channelName, views, publishedAt);
+    
+    // Cache the insights
+    insightsCache.set(videoId, {
+      insights,
+      timestamp: Date.now()
+    });
+    
+    return insights;
+  } catch (error) {
+    console.error('Error getting video insights:', error);
+    throw error;
   }
-
-  // Get fresh insights
-  const insights = await analyzeVideo(title, channelName, views, publishedAt);
-  
-  // Update cache
-  insightsCache.set(videoId, {
-    insights,
-    timestamp: Date.now()
-  });
-
-  return insights;
 }
