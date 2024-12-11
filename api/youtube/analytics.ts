@@ -22,10 +22,25 @@ interface AnalyticsResponse {
   analyticsData: youtubeAnalytics_v2.Schema$QueryResponse;
 }
 
-export default async function handler(
+function calculateEngagementRate(stats: ChannelStats): string {
+  if (!stats?.viewCount) return '0';
+  const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
+  const views = parseInt(stats.viewCount);
+  return ((interactions / views) * 100).toFixed(2);
+}
+
+export const config = {
+  runtime: 'edge',
+  unstable_allowDynamic: [
+    '/node_modules/googleapis/**',
+    '/node_modules/googleapis-common/**'
+  ]
+};
+
+const handler = async (
   req: VercelRequest,
   res: VercelResponse
-): Promise<void> {
+): Promise<void> => {
   if (req.method !== 'GET') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
@@ -92,11 +107,6 @@ export default async function handler(
     console.error('Error fetching YouTube analytics:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
-}
+};
 
-function calculateEngagementRate(stats: ChannelStats): string {
-  if (!stats?.viewCount) return '0';
-  const interactions = (parseInt(stats.likeCount || '0') + parseInt(stats.commentCount || '0'));
-  const views = parseInt(stats.viewCount);
-  return ((interactions / views) * 100).toFixed(2);
-}
+export default handler;
