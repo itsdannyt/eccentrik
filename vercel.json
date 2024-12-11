@@ -1,4 +1,5 @@
 {
+  "version": 2,
   "rewrites": [
     {
       "source": "/api/:path*",
@@ -11,12 +12,7 @@
   ],
   "functions": {
     "api/youtube/*.ts": {
-      "runtime": "@vercel/node@2.15.10"
-    }
-  },
-  "build": {
-    "env": {
-      "NODE_VERSION": "18.x"
+      "runtime": "@vercel/node@18.x"
     }
   }
 }
