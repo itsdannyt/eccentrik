@@ -38,58 +38,49 @@ async function startServer() {
       });
     }
 
-    // Configure CORS with specific options
+    // Configure CORS
     app.use(cors({
-      origin: [
-        'http://localhost:5174',
-        'http://localhost:3000',
-        'https://eccentrik.co'
-      ],
-      methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      origin: true, // This allows all origins in development
       credentials: true,
-      optionsSuccessStatus: 200
+      methods: ['GET', 'POST', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
     }));
 
     // Parse JSON bodies
     app.use(express.json());
 
-    // Set security headers
-    app.use((req, res, next) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+    // API Routes - Handle these before static files
+    app.use('/api', (req, res, next) => {
+      res.setHeader('Content-Type', 'application/json');
       next();
     });
 
-    // API routes - make sure they're handled first
-    app.use('/api/youtube', (req, res, next) => {
-      res.type('application/json');
-      next();
-    }, youtubeRouter);
-    
-    app.use('/auth/youtube', (req, res, next) => {
-      res.type('application/json');
-      next();
-    }, youtubeAuthRouter);
+    app.use('/api/youtube', youtubeRouter);
+    app.use('/auth/youtube', youtubeAuthRouter);
 
-    // Serve static files from the dist directory
-    const distPath = resolve(__dirname, '../dist');
-    app.use(express.static(distPath, {
-      setHeaders: (res, path) => {
-        if (path.endsWith('.js')) {
-          res.setHeader('Content-Type', 'application/javascript');
-        }
-        if (path.endsWith('.ts')) {
-          res.setHeader('Content-Type', 'application/javascript');
-        }
-      }
-    }));
-
-    // SPA fallback - must come after API routes
-    app.get('*', (req, res, next) => {
+    // Static file serving - Only if not an API route
+    app.use((req, res, next) => {
       if (req.path.startsWith('/api/')) {
         next();
       } else {
+        const distPath = resolve(__dirname, '../dist');
+        express.static(distPath, {
+          index: false, // Don't serve index.html automatically
+          setHeaders: (res, path) => {
+            if (path.endsWith('.js')) {
+              res.setHeader('Content-Type', 'application/javascript');
+            }
+          }
+        })(req, res, next);
+      }
+    });
+
+    // SPA fallback - Only for non-API routes
+    app.use((req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        next();
+      } else {
+        const distPath = resolve(__dirname, '../dist');
         res.sendFile(resolve(distPath, 'index.html'));
       }
     });
@@ -101,16 +92,20 @@ async function startServer() {
         stack: err.stack,
         status: err.status || 500
       });
-      
-      // Make sure we're sending JSON
-      res.setHeader('Content-Type', 'application/json');
-      res.status(err.status || 500).json({
-        error: {
-          message: err.message || 'Internal Server Error',
-          status: err.status || 500,
-          ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
-        }
-      });
+
+      // Always send JSON for API routes
+      if (req.path.startsWith('/api/')) {
+        res.setHeader('Content-Type', 'application/json');
+        res.status(err.status || 500).json({
+          error: {
+            message: err.message || 'Internal Server Error',
+            status: err.status || 500,
+            ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+          }
+        });
+      } else {
+        next(err);
+      }
     });
 
     await new Promise<void>((resolve) => {
