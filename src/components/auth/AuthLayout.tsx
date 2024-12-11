@@ -11,8 +11,8 @@ interface AuthLayoutProps {
 export function AuthLayout({ children, title, description }: AuthLayoutProps) {
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center">
           <Link to="/" className="inline-block mb-4">
             <Zap className="w-12 h-12 text-orange-500" fill="currentColor" strokeWidth={1.5} />
           </Link>
@@ -20,9 +20,7 @@ export function AuthLayout({ children, title, description }: AuthLayoutProps) {
           <p className="text-gray-400">{description}</p>
         </div>
         
-        <div className="glass-effect rounded-2xl p-8">
-          {children}
-        </div>
+        {children}
       </div>
 
       {/* Background effects */}
